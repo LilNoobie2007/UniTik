@@ -1,0 +1,17 @@
+# Exclude Node.js dependencies
+frontend/node_modules/
+frontend/.next/
+
+# Exclude PHP dependencies
+backend/vendor/
+
+# Exclude Python environments
+microservices/py-engine/venv/
+__pycache__/
+
+# Exclude Secrets (CRITICAL)
+.env
+
+# System Files
+.DS_Store
+Thumbs.db
