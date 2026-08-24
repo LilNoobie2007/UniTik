@@ -1,11 +1,19 @@
 <?php
-// backend/db.php
+/* 
+ * UNITIK CORE ARCHITECTURE MANDATE
+ * - Frontend: Next.js / BFF
+ * - Backend: PHP 8+ (PDO/PostgreSQL)
+ * - DO NOT use client-side database calls.
+ * - DO NOT trust client inputs. Always sanitize.
+ * - Preserve existing logic during modifications.
+ */
 
-$host     = 'aws-0-ap-southeast-1.pooler.supabase.com'; // From the Supabase PHP tab
+// 1. Connection via Supavisor pooler (IPv4 compatible for XAMPP)
+$host = 'aws-0-ap-southeast-1.pooler.supabase.com';
 $dbname   = 'postgres';
-$username = 'postgres.eadjhibjwolfhunrtljs'; // From the Supabase PHP tab
-$password = 'Unitik@9901'; // The password you created at setup
-$port     = '6543';
+$username = 'postgres.eadjhibjwolfhunrtljs'; // Pooler requires 'postgres.[project-ref]' format
+$password = 'Unitik@9901'; // Your real DB password
+$port     = '6543'; // Pooler port
 
 try {
     $dsn = "pgsql:host=$host;port=$port;dbname=$dbname";
@@ -15,9 +23,6 @@ try {
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         PDO::ATTR_EMULATE_PREPARES   => false,
     ]);
-
-    echo "Unitk Database Connection Successful! 🚀";
-    
 } catch (PDOException $e) {
     http_response_code(500);
     die(json_encode([

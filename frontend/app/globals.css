@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+/* 
+  UNITIK GLOBAL DESIGN SYSTEM
+  Deep dark background with subtle neon-glass aesthetics. 
+*/
+
+@theme {
+  --color-background: #0a0a0a;
+  --color-surface: #121212;
+  --color-surface-hover: #1e1e1e;
+  
+  --color-primary: #3b82f6; /* Glowing Tech Blue */
+  --color-primary-hover: #2563eb;
+  
+  --color-accent: #8b5cf6; /* Vibrant Purple */
+  --color-text-main: #ffffff;
+  --color-text-muted: #a1a1aa;
+  
+  --color-border: #27272a;
+}
+
+body {
+  background-color: var(--color-background);
+  color: var(--color-text-main);
+  font-family: Arial, Helvetica, sans-serif;
+  overflow-x: hidden;
+}
+
+/* Glassmorphism Utility */
+.glass-panel {
+  background: rgba(18, 18, 18, 0.6);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Glowing Border Animation Utility */
+.glow-border {
+  position: relative;
+}
+.glow-border::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(to right, var(--color-primary), var(--color-accent));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 0.3s ease-in-out;
+}
+.glow-border:hover::before {
+  opacity: 1;
+}

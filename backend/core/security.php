@@ -1,36 +1,31 @@
 <?php
-// backend/core/security.php
-// Active Defense Middleware: The "Caught in 4K" Honeypot
+/* 
+ * UNITIK CORE SECURITY MIDDLEWARE
+ * Purpose: Centralized input sanitization and security protocols.
+ */
 
-function sanitizeRequest() {
-    // Capture all incoming GET and POST data
-    $payload = json_encode($_REQUEST);
-    
-    // Dictionary of basic malicious SQLi and XSS payloads
-    $malicious_patterns = [
-        '/UNION\s+SELECT/i',
-        '/DROP\s+TABLE/i',
-        '/OR\s+1=1/i',
-        '/<script.*?>/i',
-        '/--\s*$/'
-    ];
+// Read raw input (This is the line we fixed earlier!)
+$rawInput = file_get_contents('php://input') ?: '';
 
-    foreach ($malicious_patterns as $pattern) {
-        if (preg_match($pattern, $payload)) {
-            $ip = $_SERVER['REMOTE_ADDR'];
-            
-            // In Phase 2, we will INSERT this IP into a security_audit_logs table here.
-            
-            http_response_code(403);
-            die(json_encode([
-                "status" => "banned",
-                "error_code" => "SEC_001",
-                "message" => "Nice try! 📸 Caught you in 4K. Malicious payload detected. Your IP ($ip) and browser fingerprint have been recorded."
-            ]));
+/**
+ * Sanitizes input to prevent Cross-Site Scripting (XSS) and clean raw data.
+ * Works on both strings and arrays.
+ */
+function sanitizeInput($data) {
+    if (is_array($data)) {
+        foreach ($data as $key => $value) {
+            $data[$key] = sanitizeInput($value);
         }
+        return $data;
     }
+    
+    // Strip unnecessary whitespace
+    $data = trim($data);
+    // Remove backslashes
+    $data = stripslashes($data);
+    // Convert special characters to HTML entities to prevent malicious scripts
+    $data = htmlspecialchars($data, ENT_QUOTES, 'UTF-8');
+    
+    return $data;
 }
-
-// Execute the honeypot on every request
-sanitizeRequest();
 ?>
