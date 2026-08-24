@@ -31,50 +31,18 @@ All formal system design diagrams are organized inside the `docs/diagrams/` dire
 
 ---
 
-## 💻 Local Setup & Installation
-
-### 1. Clone the repository
-```bash
-git clone [https://github.com/LilNoobie2007/UniTik.git](https://github.com/LilNoobie2007/UniTik.git)
-cd UniTik
-
-
-2. Backend Setup (XAMPP / PHP)
-Move or clone the project folder directly into your XAMPP htdocs directory:
-
-Bash
-# Windows XAMPP path example:
-# C:\xampp\htdocs\UniTik
-Install backend dependencies using Composer:
-
-Bash
-composer install
-Configure your Supabase database host, port, and credentials inside backend/core/db.php.
-
-3. Frontend Setup (Next.js)
-Navigate into the frontend workspace:
-
-Bash
-cd frontend
-Install the required Node packages:
-
-Bash
-npm install
-Run the local development server:
-
-Bash
-npm run dev
-Open your browser and navigate to http://localhost:3000 to interact with the application.
-
-📜 Version History
-v1.0 - Initial Release
-Established the 3NF database schema across Supabase.
-
-Built modular PHP BFF backend endpoints for event feeds and ticketing.
-
-Integrated Next.js frontend components for dynamic user interaction.
-
-👨‍💻 Author
-Built with 💻 and ☕ by Kevin Makwana.
-
-© UniTik Systems
+## 🗂️ Project Structure
+```text
+UniTik/
+├── backend/
+│   ├── assets/         # System images & logos
+│   ├── core/           # DB connection & mailer configs
+│   └── modules/        # Modular API endpoints (Auth, Events, Ticketing)
+├── docs/
+│   └── diagrams/       # System ERD, DFDs, Class, UCD, & Sequence diagrams
+├── frontend/
+│   ├── app/            # Next.js App router (Components, API routes, Pages)
+│   └── public/         # Static frontend assets
+├── composer.json       # PHP dependency configuration
+├── composer.lock       # Locked PHP dependency versions
+└── README.md           # Project documentation
