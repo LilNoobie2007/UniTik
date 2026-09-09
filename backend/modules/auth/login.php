@@ -1,62 +1,58 @@
 <?php
 declare(strict_types=1);
 
-/**
- * Endpoint: /auth/login.php
- * Purpose: Authenticate a user by email and password hash.
- */
-
 header('Content-Type: application/json');
-require_once '../../core/security.php';
-require_once '../../core/db.php';
+ob_start();
+error_reporting(E_ALL);
+ini_set('display_errors', '0');
 
-/**
- * Loads a user row for login by email.
- *
- * @param PDO    $pdo   Active PDO connection.
- * @param string $email User email.
- *
- * @return array<string, mixed>|false User row or false if not found.
- *
- * @throws PDOException When the query fails.
- */
-function findUserByEmail(PDO $pdo, string $email): array|false
-{
-    $stmt = $pdo->prepare("SELECT id, full_name, email, password_hash, role FROM users WHERE email = :email");
-    $stmt->execute(['email' => $email]);
+require_once __DIR__ . '/../../core/cors.php';
+require_once __DIR__ . '/../../core/db.php';
+require_once __DIR__ . '/../../core/security.php';
 
-    return $stmt->fetch();
-}
+$input = file_get_contents('php://input');
+$data = json_decode($input, true);
 
-$data = json_decode(file_get_contents('php://input'), true) ?? $_POST;
-
-$email    = trim($data['email'] ?? '');
-$password = trim($data['password'] ?? '');
-
-if (empty($email) || empty($password)) {
+if (!$data || empty($data['email']) || empty($data['password'])) {
     http_response_code(400);
     echo json_encode(["status" => "error", "message" => "Email and password are required."]);
-    exit;
+    exit();
 }
 
+$email = sanitizeInput($data['email']);
+$password = $data['password'];
+
 try {
-    $user = findUserByEmail($pdo, $email);
+    // 1. Check if user is an organizer (Admin)
+    $stmt = $pdo->prepare("SELECT id, full_name, email, password_hash, 'admin' as role FROM organizers WHERE email = ?");
+    $stmt->execute([$email]);
+    $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    // 2. If not found in organizers, check students table
+    if (!$user) {
+        $stmt = $pdo->prepare("SELECT id, full_name, email, password_hash, 'student' as role FROM students WHERE email = ?");
+        $stmt->execute([$email]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+    }
 
     if (!$user || !password_verify($password, $user['password_hash'])) {
         http_response_code(401);
         echo json_encode(["status" => "error", "message" => "Invalid email or password."]);
-        exit;
+        exit();
     }
 
-    // Strip the password hash before sending user data to the frontend
+    // Remove password hash before sending back user profile
     unset($user['password_hash']);
 
+    ob_end_clean();
     echo json_encode([
-        "status"  => "success",
-        "message" => "Login successful.",
-        "user"    => $user
+        "status" => "success",
+        "message" => "Login successful",
+        "user" => $user
     ]);
+
 } catch (PDOException $e) {
+    ob_end_clean();
     http_response_code(500);
     echo json_encode(["status" => "error", "message" => $e->getMessage()]);
 }

@@ -5,8 +5,8 @@ import type { CampusEvent, EventFeedProps, EventsListResponse } from "@/app/type
 import EventCard from "./EventCard";
 import SkeletonCard from "./SkeletonCard";
 
-const DEFAULT_EVENTS_URL =
-  "http://localhost/UniTik/backend/modules/events/list.php";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8080";
+const DEFAULT_EVENTS_URL = `${API_BASE}/modules/events/list.php`;
 
 export default function EventFeed({
   apiUrl = DEFAULT_EVENTS_URL,

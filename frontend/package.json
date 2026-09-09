@@ -3,11 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
-  },
+  "dev": "next dev",
+  "build": "next build",
+  "lint": "next lint",
+  "dev:backend": "php -S localhost:8080 -t ../backend",
+  "both": "concurrently -c \"cyan,magenta\" \"npm run dev\" \"npm run dev:backend\""
+},
   "dependencies": {
     "clsx": "^2.1.1",
     "framer-motion": "^13.0.0",
@@ -23,6 +24,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "concurrently": "^10.0.5",
     "eslint": "^9",
     "eslint-config-next": "16.3.0",
     "tailwindcss": "^4",

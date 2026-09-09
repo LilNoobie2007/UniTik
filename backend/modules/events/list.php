@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__ . '/../../core/cors.php';
 
 /**
  * Endpoint: /events/list.php
@@ -7,7 +8,6 @@ declare(strict_types=1);
  */
 
 header('Content-Type: application/json');
-header('Access-Control-Allow-Origin: *');
 
 /**
  * Fetches all events joined with venue and organizer data.
@@ -44,7 +44,9 @@ function fetchEvents(PDO $pdo): array
  */
 function formatEventRow(array $event): array
 {
-    $event['date'] = date('M d, Y', strtotime((string) $event['event_date']));
+    $timestamp = !empty($event['event_date']) ? strtotime((string)$event['event_date']) : false;
+    $event['date'] = ($timestamp !== false) ? date('M d, Y', $timestamp) : 'TBA';
+
     $rawPrice = $event['ticket_price'] ?? 0;
     $event['price'] = ($rawPrice > 0) ? '₹' . number_format((float) $rawPrice, 2) : 'Free';
     $event['location'] = $event['venue_name'] ? $event['venue_name'] . ' (' . $event['location_details'] . ')' : 'UniTik Campus';

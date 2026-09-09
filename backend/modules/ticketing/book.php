@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 /**
  * Endpoint: /ticketing/book.php
- * Purpose: Create a ticket, generate a QR payload, and email it to the user.
+ * Purpose: Create a ticket, generate a QR payload, and email it to the student.
  */
 
 // 1. Force JSON output immediately
@@ -21,7 +21,7 @@ ini_set('display_errors', '0');
  *
  * @param PDO    $pdo        Active PDO connection.
  * @param string $eventId    Event UUID.
- * @param string $userId     User UUID.
+ * @param string $userId     Student UUID payload from frontend.
  * @param string $ticketHash Unique ticket hash.
  *
  * @return array<string, mixed>|false Inserted ticket row.
@@ -30,28 +30,38 @@ ini_set('display_errors', '0');
  */
 function insertTicket(PDO $pdo, string $eventId, string $userId, string $ticketHash): array|false
 {
-    $stmt = $pdo->prepare("INSERT INTO tickets (event_id, user_id, ticket_hash) VALUES (:eid, :uid, :hash) RETURNING id");
-    $stmt->execute([':eid' => $eventId, ':uid' => $userId, ':hash' => $ticketHash]);
+    $stmt = $pdo->prepare("
+        INSERT INTO tickets (event_id, student_id, user_id, ticket_hash) 
+        VALUES (:eid, :uid, :uid, :hash) 
+        RETURNING id
+    ");
+    
+    $stmt->execute([
+        ':eid' => $eventId, 
+        ':uid' => $userId, 
+        ':hash' => $ticketHash
+    ]);
 
     return $stmt->fetch(PDO::FETCH_ASSOC);
 }
 
 /**
- * Loads email and full name for a user.
+ * Loads email and full name for a student.
  *
  * @param PDO    $pdo    Active PDO connection.
- * @param string $userId User UUID.
+ * @param string $userId Student UUID payload from frontend.
  *
- * @return array<string, mixed>|false User row.
+ * @return array<string, mixed>|false Student row.
  *
  * @throws PDOException When the query fails.
  */
-function fetchUserForTicket(PDO $pdo, string $userId): array|false
+function fetchStudentForTicket(PDO $pdo, string $userId): array|false
 {
-    $user = $pdo->prepare("SELECT email, full_name FROM users WHERE id = ?");
-    $user->execute([$userId]);
+    // Updated to query the 'students' table
+    $student = $pdo->prepare("SELECT email, full_name FROM students WHERE id = ?");
+    $student->execute([$userId]);
 
-    return $user->fetch(PDO::FETCH_ASSOC);
+    return $student->fetch(PDO::FETCH_ASSOC);
 }
 
 /**
@@ -120,8 +130,15 @@ try {
     $ticket = insertTicket($pdo, $event_id, $user_id, $ticket_hash);
 
     // 7. Get User/Event Info
-    $userData = fetchUserForTicket($pdo, $user_id);
+    $userData = fetchStudentForTicket($pdo, $user_id);
+    if (!$userData) {
+        throw new Exception("Student record not found in the database.");
+    }
+    
     $eventData = fetchEventForTicket($pdo, $event_id);
+    if (!$eventData) {
+        throw new Exception("Event record not found in the database.");
+    }
 
     // 8. Generate QR
     $qrPng = buildTicketQrPng($ticket_hash);
