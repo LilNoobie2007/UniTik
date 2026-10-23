@@ -1,106 +1,67 @@
 "use client";
 
-import { useState, useEffect, type FormEvent, type JSX } from "react";
-import { useRouter } from "next/navigation";
+/*
+ * File: frontend/app/login/page.tsx
+ * UNITIK CORE ARCHITECTURE MANDATE
+ * - Frontend: Next.js / BFF
+ * - Backend: PHP 8+ (PDO/PostgreSQL)
+ * - DO NOT use client-side database calls.
+ * - DO NOT trust client inputs. Always sanitize.
+ * - Preserve existing logic during modifications.
+ */
+
+import { useState, type FormEvent } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { api } from "@/lib/api";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8080";
+type SessionUser = {
+  id: string;
+  full_name: string;
+  email: string;
+  role: string;
+};
 
-export default function LoginPage(): JSX.Element {
-  const [email, setEmail] = useState<string>("");
-  const [password, setPassword] = useState<string>("");
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState<boolean>(false);
+export default function LoginPage() {
   const router = useRouter();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    const existingUser = localStorage.getItem("unitik_user");
-    if (existingUser) {
-      router.replace("/");
-    }
-  }, [router]);
-
-  const handleLogin = async (e: FormEvent<HTMLFormElement>): Promise<void> => {
-    e.preventDefault();
+  async function onSubmit(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
     setError(null);
-    setLoading(true);
-
     try {
-      const res = await fetch(`${API_BASE}/modules/auth/login.php`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
-
-      const data = await res.json();
-
-      if (res.ok && data.status === "success") {
-        localStorage.setItem("unitik_user", JSON.stringify(data.user));
-        window.location.href = data.user.role === "admin" ? "/admin/dashboard" : "/";
-      } else {
-        setError(data.message || "Invalid credentials.");
-      }
-    } catch (err: unknown) {
-      console.error("Login network error:", err);
-      setError("Failed to connect to the authentication server.");
+      const user = await api<SessionUser>("/modules/auth/login.php", { email, password });
+      sessionStorage.setItem("unitik_profile", JSON.stringify(user));
+      router.push("/");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Sign-in failed.");
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
-  };
+  }
 
   return (
-    <main className="flex min-h-screen w-full items-center justify-center bg-zinc-950 px-6 text-white">
-      <div className="w-full max-w-md rounded-3xl border border-white/10 bg-zinc-900/80 p-8 backdrop-blur-xl shadow-2xl">
-        <div className="mb-8 text-center">
-          <h1 className="text-2xl font-bold tracking-tight text-cyan-400">UniTik Portal</h1>
-          <p className="text-sm text-zinc-400 mt-2">Sign in to manage your campus events or tickets</p>
-        </div>
-
-        {error && (
-          <div className="mb-6 rounded-xl border border-rose-500/20 bg-rose-500/10 p-4 text-sm text-rose-400">
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handleLogin} className="space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-zinc-300 mb-1">Campus Email</label>
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="student@unitik.campus"
-              className="w-full rounded-xl border border-white/10 bg-zinc-950/60 px-4 py-3 text-sm text-white placeholder-zinc-600 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-zinc-300 mb-1">Password</label>
-            <input
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              className="w-full rounded-xl border border-white/10 bg-zinc-950/60 px-4 py-3 text-sm text-white placeholder-zinc-600 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-cyan-500/25 hover:opacity-95 transition-all disabled:opacity-50 mt-4 cursor-pointer"
-          >
-            {loading ? "Authenticating..." : "Sign In"}
-          </button>
-        </form>
-
-        <div className="mt-6 flex items-center justify-between text-xs text-zinc-400">
-          <span>New user? <Link href="/signup" className="text-cyan-400 hover:underline font-medium">Sign Up</Link></span>
-          <Link href="/admin/login" className="text-amber-400 hover:underline font-medium">Admin Portal →</Link>
-        </div>
-      </div>
+    <main className="page">
+      <p className="kicker">Student portal</p>
+      <h1>Sign in</h1>
+      <p className="lede">The server session is the pass. This screen does not choose a role.</p>
+      <form onSubmit={(event) => void onSubmit(event)} className="panel" style={{ maxWidth: 420 }}>
+        {error && <p className="error">{error}</p>}
+        <label htmlFor="email">Campus email</label>
+        <input id="email" type="email" required value={email} onChange={(event) => setEmail(event.target.value)} />
+        <label htmlFor="password">Password</label>
+        <input id="password" type="password" required value={password} onChange={(event) => setPassword(event.target.value)} />
+        <button className="btn block" type="submit" disabled={busy}>
+          {busy ? "Signing in…" : "Sign in"}
+        </button>
+        <p className="meta">
+          New here? <Link href="/signup">Create an account</Link>
+        </p>
+      </form>
     </main>
   );
-}   
+}

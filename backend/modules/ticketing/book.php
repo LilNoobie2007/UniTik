@@ -1,171 +1,125 @@
 <?php
 declare(strict_types=1);
 
-/**
- * Endpoint: /ticketing/book.php
- * Purpose: Create a ticket, generate a QR payload, and email it to the student.
+/*
+ * File: backend/modules/ticketing/book.php
+ * UNITIK CORE ARCHITECTURE MANDATE
+ * - Frontend: Next.js / BFF
+ * - Backend: PHP 8+ (PDO/PostgreSQL)
+ * - DO NOT use client-side database calls.
+ * - DO NOT trust client inputs. Always sanitize.
+ * - Preserve existing logic during modifications.
+ *
+ * Holder is the session user. tickets.student_id — there is no tickets.user_id.
+ * Capacity is checked while the event row is locked.
  */
 
-// 1. Force JSON output immediately
-header('Content-Type: application/json');
+require_once __DIR__ . '/../../core/security.php';
+require_once __DIR__ . '/../../core/db.php';
+require_once __DIR__ . '/../../core/mail.php';
 
-// 2. Start output buffering to catch any "hidden" errors/warnings
-ob_start();
+allowCors();
 
-// 3. Silence PHP notices/warnings so they don't break JSON
-error_reporting(E_ALL);
-ini_set('display_errors', '0');
-
-/**
- * Inserts a ticket and returns the new row (including id).
- *
- * @param PDO    $pdo        Active PDO connection.
- * @param string $eventId    Event UUID.
- * @param string $userId     Student UUID payload from frontend.
- * @param string $ticketHash Unique ticket hash.
- *
- * @return array<string, mixed>|false Inserted ticket row.
- *
- * @throws PDOException When the insert fails.
- */
-function insertTicket(PDO $pdo, string $eventId, string $userId, string $ticketHash): array|false
-{
-    $stmt = $pdo->prepare("
-        INSERT INTO tickets (event_id, student_id, user_id, ticket_hash) 
-        VALUES (:eid, :uid, :uid, :hash) 
-        RETURNING id
-    ");
-    
-    $stmt->execute([
-        ':eid' => $eventId, 
-        ':uid' => $userId, 
-        ':hash' => $ticketHash
-    ]);
-
-    return $stmt->fetch(PDO::FETCH_ASSOC);
+if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+    jsonResponse(405, ['status' => 'error', 'message' => 'Method not allowed.']);
 }
 
-/**
- * Loads email and full name for a student.
- *
- * @param PDO    $pdo    Active PDO connection.
- * @param string $userId Student UUID payload from frontend.
- *
- * @return array<string, mixed>|false Student row.
- *
- * @throws PDOException When the query fails.
- */
-function fetchStudentForTicket(PDO $pdo, string $userId): array|false
-{
-    // Updated to query the 'students' table
-    $student = $pdo->prepare("SELECT email, full_name FROM students WHERE id = ?");
-    $student->execute([$userId]);
+$user = requireActiveUser($pdo);
+$data = readJsonBody();
+$eventId = strtolower(sanitizeText($data['event_id'] ?? ''));
 
-    return $student->fetch(PDO::FETCH_ASSOC);
+if (!preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/', $eventId)) {
+    jsonResponse(400, ['status' => 'error', 'message' => 'A valid event_id is required.']);
 }
 
-/**
- * Loads the event title for a ticket email.
- *
- * @param PDO    $pdo     Active PDO connection.
- * @param string $eventId Event UUID.
- *
- * @return array<string, mixed>|false Event row.
- *
- * @throws PDOException When the query fails.
- */
-function fetchEventForTicket(PDO $pdo, string $eventId): array|false
-{
-    $event = $pdo->prepare("SELECT title FROM events WHERE id = ?");
-    $event->execute([$eventId]);
-
-    return $event->fetch(PDO::FETCH_ASSOC);
-}
-
-/**
- * Builds PNG QR bytes for a ticket hash.
- *
- * @param string $ticketHash Unique ticket hash.
- *
- * @return string PNG image bytes.
- */
-function buildTicketQrPng(string $ticketHash): string
-{
-    $qrResult = \Endroid\QrCode\Builder\Builder::create()
-        ->writer(new \Endroid\QrCode\Writer\PngWriter())
-        ->data($ticketHash)
-        ->size(400)
-        ->build();
-
-    return $qrResult->getString();
-}
+$ticketHash = bin2hex(random_bytes(16));
 
 try {
-    // 4. Load dependencies
-    require_once __DIR__ . '/../../../vendor/autoload.php';
-    require_once __DIR__ . '/../../core/security.php';
-    require_once __DIR__ . '/../../core/db.php';
-    require_once __DIR__ . '/../../core/mailer.php';
+    $pdo->beginTransaction();
 
-    // 5. Parse payload
-    $input = file_get_contents('php://input');
-    $data = json_decode($input, true);
+    $eventStmt = $pdo->prepare(
+        'SELECT e.id, e.title, e.status, e.event_date, e.ticket_price, v.max_capacity,
+                (SELECT count(*)::int FROM tickets t WHERE t.event_id = e.id) AS sold
+         FROM events e
+         JOIN venues v ON v.id = e.venue_id
+         WHERE e.id = :id
+         FOR UPDATE OF e'
+    );
+    $eventStmt->execute(['id' => $eventId]);
+    $event = $eventStmt->fetch();
 
-    if (!$data) {
-        throw new Exception("Invalid JSON input");
+    if (!is_array($event)) {
+        $pdo->rollBack();
+        jsonResponse(404, ['status' => 'error', 'message' => 'Event not found.']);
+    }
+    if ($event['status'] !== 'published') {
+        $pdo->rollBack();
+        jsonResponse(409, ['status' => 'error', 'message' => 'This event is no longer accepting bookings.']);
+    }
+    if ((float) $event['ticket_price'] > 0) {
+        $pdo->rollBack();
+        jsonResponse(402, ['status' => 'error', 'message' => 'This event requires payment before a ticket is issued.']);
+    }
+    if (strtotime((string) $event['event_date']) < time()) {
+        $pdo->rollBack();
+        jsonResponse(409, ['status' => 'error', 'message' => 'This event has already started.']);
+    }
+    if ((int) $event['sold'] >= (int) $event['max_capacity']) {
+        $pdo->rollBack();
+        jsonResponse(409, ['status' => 'error', 'message' => 'This event is sold out.']);
     }
 
-    $user_id = sanitizeInput($data['user_id'] ?? '');
-    $event_id = sanitizeInput($data['event_id'] ?? '');
-
-    if (empty($user_id) || empty($event_id)) {
-        throw new Exception("Missing required fields: user_id or event_id");
-    }
-
-    $user_id = (string) $user_id;
-    $event_id = (string) $event_id;
-
-    // 6. DB Operations
-    $ticket_hash = bin2hex(random_bytes(16));
-    $ticket = insertTicket($pdo, $event_id, $user_id, $ticket_hash);
-
-    // 7. Get User/Event Info
-    $userData = fetchStudentForTicket($pdo, $user_id);
-    if (!$userData) {
-        throw new Exception("Student record not found in the database.");
-    }
-    
-    $eventData = fetchEventForTicket($pdo, $event_id);
-    if (!$eventData) {
-        throw new Exception("Event record not found in the database.");
-    }
-
-    // 8. Generate QR
-    $qrPng = buildTicketQrPng($ticket_hash);
-
-    // 9. Send Email (Assuming sendTicketEmail returns boolean)
-    $emailSuccess = sendTicketEmail($userData['email'], $userData['full_name'], $eventData['title'], $ticket_hash, $qrPng);
-
-    // --- SUCCESS: CLEAN THE BUFFER AND SEND JSON ---
-    ob_end_clean();
-    echo json_encode([
-        "status" => "success",
-        "ticket_hash" => $ticket_hash,
-        "email_sent" => $emailSuccess
+    $insert = $pdo->prepare(
+        'INSERT INTO tickets (event_id, student_id, ticket_hash, booking_device)
+         VALUES (:event_id, :student_id, :ticket_hash, :booking_device)
+         RETURNING id, ticket_hash'
+    );
+    $insert->execute([
+        'event_id' => $eventId,
+        'student_id' => $user['id'],
+        'ticket_hash' => $ticketHash,
+        'booking_device' => 'web',
     ]);
+    $ticket = $insert->fetch();
+    $pdo->commit();
 } catch (PDOException $e) {
-    ob_end_clean();
-    http_response_code(500);
-    echo json_encode([
-        "status" => "error",
-        "message" => $e->getMessage()
-    ]);
-} catch (Exception $e) {
-    // --- ERROR: CLEAN THE BUFFER AND SEND JSON ERROR ---
-    ob_end_clean();
-    http_response_code(500);
-    echo json_encode([
-        "status" => "error",
-        "message" => $e->getMessage()
-    ]);
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
+    if ($e->getCode() === '23505') {
+        jsonResponse(409, ['status' => 'error', 'message' => 'You already hold a ticket for this event.']);
+    }
+    jsonResponse(500, ['status' => 'error', 'message' => 'Booking failed.']);
 }
+
+$mail = ['mail_status' => 'skipped', 'mail_detail' => 'Mail transport is not configured.'];
+try {
+    $holder = $pdo->prepare('SELECT email, full_name FROM users WHERE id = :id');
+    $holder->execute(['id' => $user['id']]);
+    $person = $holder->fetch();
+    if (is_array($person)) {
+        $when = date('Y-m-d H:i T', strtotime((string) $event['event_date']) ?: time());
+        $mail = sendTicketMail(
+            (string) $person['email'],
+            (string) $person['full_name'],
+            (string) $event['title'],
+            $when,
+            (string) $ticket['ticket_hash']
+        );
+    }
+} catch (Throwable $e) {
+    $mail = ['mail_status' => 'failed', 'mail_detail' => 'The ticket is issued, but the email could not be sent.'];
+}
+
+jsonResponse(201, [
+    'status' => 'success',
+    'data' => [
+        'id' => $ticket['id'],
+        'ticket_hash' => $ticket['ticket_hash'],
+        'event_id' => $eventId,
+        'event_title' => $event['title'],
+        'student_id' => $user['id'],
+        'mail_status' => $mail['mail_status'],
+        'mail_detail' => $mail['mail_detail'],
+    ],
+]);

@@ -1,57 +1,88 @@
 <?php
 declare(strict_types=1);
 
-header('Content-Type: application/json');
-ob_start();
-error_reporting(E_ALL);
-ini_set('display_errors', '0');
+/*
+ * File: backend/modules/auth/signup.php
+ * UNITIK CORE ARCHITECTURE MANDATE
+ * - Frontend: Next.js / BFF
+ * - Backend: PHP 8+ (PDO/PostgreSQL)
+ * - DO NOT use client-side database calls.
+ * - DO NOT trust client inputs. Always sanitize.
+ * - Preserve existing logic during modifications.
+ *
+ * Creates a student only. Role is not read from the client.
+ * users columns: full_name, email, password_hash, role, roll_number.
+ */
 
-require_once __DIR__ . '/../../core/cors.php';
-require_once __DIR__ . '/../../core/db.php';
 require_once __DIR__ . '/../../core/security.php';
+require_once __DIR__ . '/../../core/db.php';
 
-$input = file_get_contents('php://input');
-$data = json_decode($input, true);
+allowCors();
 
-if (!$data || empty($data['email']) || empty($data['password']) || empty($data['full_name'])) {
-    http_response_code(400);
-    echo json_encode(["status" => "error", "message" => "Full name, email, and password are required."]);
-    exit();
+if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+    jsonResponse(405, ['status' => 'error', 'message' => 'Method not allowed.']);
 }
 
-$full_name = sanitizeInput($data['full_name']);
-$email = sanitizeInput($data['email']);
-$password = $data['password'];
-$roll_number = sanitizeInput($data['roll_number'] ?? '');
+$data = readJsonBody();
+$fullName = sanitizeText($data['full_name'] ?? '');
+$email = strtolower(sanitizeText($data['email'] ?? ''));
+$password = is_string($data['password'] ?? null) ? $data['password'] : '';
+$rollNumber = sanitizeText($data['roll_number'] ?? '');
+$rollNumber = $rollNumber === '' ? null : $rollNumber;
+
+if ($fullName === '' || mb_strlen($fullName) < 2 || mb_strlen($fullName) > 100) {
+    jsonResponse(400, ['status' => 'error', 'message' => 'Full name is required.']);
+}
+if ($email === '' || filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
+    jsonResponse(400, ['status' => 'error', 'message' => 'A valid email is required.']);
+}
+if (strlen($password) < 8) {
+    jsonResponse(400, ['status' => 'error', 'message' => 'Password must be at least 8 characters.']);
+}
+if ($rollNumber !== null && mb_strlen($rollNumber) < 2) {
+    jsonResponse(400, ['status' => 'error', 'message' => 'Roll number looks too short.']);
+}
+
+$passwordHash = password_hash($password, PASSWORD_DEFAULT);
+if ($passwordHash === false) {
+    jsonResponse(500, ['status' => 'error', 'message' => 'Could not store the password.']);
+}
 
 try {
-    // Check if email already exists in students
-    $check = $pdo->prepare("SELECT id FROM students WHERE email = ?");
-    $check->execute([$email]);
-    if ($check->fetch()) {
-        http_response_code(409);
-        echo json_encode(["status" => "error", "message" => "An account with this email already exists."]);
-        exit();
-    }
-
-    $password_hash = password_hash($password, PASSWORD_DEFAULT);
-
-    // Insert new student record using database-generated UUID
-    $stmt = $pdo->prepare("
-        INSERT INTO students (id, full_name, email, password_hash, roll_number, is_verified, account_status) 
-        VALUES (gen_random_uuid(), ?, ?, ?, ?, true, 'active')
-    ");
-    
-    $stmt->execute([$full_name, $email, $password_hash, $roll_number]);
-
-    ob_end_clean();
-    echo json_encode([
-        "status" => "success",
-        "message" => "Registration successful. You can now log in."
+    $stmt = $pdo->prepare(
+        'INSERT INTO users (full_name, email, password_hash, role, roll_number)
+         VALUES (:full_name, :email, :password_hash, :role, :roll_number)
+         RETURNING id, full_name, email, role, roll_number, account_status'
+    );
+    $stmt->execute([
+        'full_name' => $fullName,
+        'email' => $email,
+        'password_hash' => $passwordHash,
+        'role' => 'student',
+        'roll_number' => $rollNumber,
     ]);
-
+    $user = $stmt->fetch();
 } catch (PDOException $e) {
-    ob_end_clean();
-    http_response_code(500);
-    echo json_encode(["status" => "error", "message" => $e->getMessage()]);
+    $sqlState = $e->getCode();
+    if ($sqlState === '23505') {
+        $detail = $e->getMessage();
+        $message = str_contains($detail, 'roll_number')
+            ? 'That roll number is already registered.'
+            : 'An account with this email already exists.';
+        jsonResponse(409, ['status' => 'error', 'message' => $message]);
+    }
+    jsonResponse(500, ['status' => 'error', 'message' => 'Registration failed.']);
 }
+
+jsonResponse(201, [
+    'status' => 'success',
+    'data' => [
+        'id' => $user['id'],
+        'full_name' => $user['full_name'],
+        'email' => $user['email'],
+        'role' => $user['role'],
+        'roll_number' => $user['roll_number'],
+        'account_status' => $user['account_status'],
+        'message' => 'Registration successful. You can now log in.',
+    ],
+]);
