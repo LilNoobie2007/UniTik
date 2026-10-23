@@ -6,6 +6,10 @@
  * - DO NOT use client-side database calls.
  * - DO NOT trust client inputs. Always sanitize.
  * - Preserve existing logic during modifications.
+ * /**
+ * Root Application Shell for UniTik.
+ * Integrates global CSS, campus pass styling, and Next.js metadata.
+ * @param {React.ReactNode} children - The injected page content
  */
 
 import type { ReactNode } from "react";
