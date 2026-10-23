@@ -10,8 +10,10 @@
  * The browser never sends a user id. The PHP session cookie is the identity.
  */
 
-export type ApiError = Error & { status?: number };
+import { logError } from './logger';
 
+export type ApiError = Error & { status?: number };
+  
 const base = () => process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 
 export async function api<T>(path: string, body?: unknown): Promise<T> {

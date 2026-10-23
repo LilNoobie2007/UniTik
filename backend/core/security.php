@@ -102,3 +102,9 @@ function requireAdmin(PDO $pdo): array
     }
     return $user;
 }
+
+
+// Added custom timestamp logger for PHP endpoints
+function unitik_log($message) {
+    error_log("[" . date("Y-m-d H:i:s") . "] " . $message);
+}
