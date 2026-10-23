@@ -1,6 +1,6 @@
 # 🎟️ UniTik - Campus Event & Ticketing Management System
 
-![Version](https://img.shields.io/badge/Version-1.1_(Production_Ready)-ff003c?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-1.2_(Production_Ready)-ff003c?style=for-the-badge)
 ![PHP](https://img.shields.io/badge/PHP_8.2-777BB4?style=for-the-badge&logo=php&logoColor=white)
 ![Next.js](https://img.shields.io/badge/Next.js-000000?style=for-the-badge&logo=next.js&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL_3NF-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)
