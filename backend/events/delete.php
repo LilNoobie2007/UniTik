@@ -1,6 +1,15 @@
 <?php
 declare(strict_types=1);
 
+/**
+ * Event Deletion Endpoint (POST)
+ * 
+ * Protected route: Enforces ownership validation. Planners can only delete
+ * events they personally created (unless they hold super-admin privileges).
+ * Executes a manual cascading deletion across gate_scan_logs, tickets, and events
+ * to maintain strict referential integrity within PostgreSQL.
+ */
+
 require_once __DIR__ . '/../core/security.php';
 require_once __DIR__ . '/../core/db.php';
 require_once __DIR__ . '/common.php';
@@ -8,14 +17,17 @@ require_once __DIR__ . '/common.php';
 $body = unitik_bootstrap();
 unitik_require_method('POST');
 
+// Strict payload sanitization
 $id = isset($body['id']) && is_string($body['id']) ? strtolower(trim($body['id'])) : '';
 if (!unitik_is_uuid($id)) {
     unitik_json(400, ['ok' => false, 'error' => 'A valid event id is required.']);
 }
 
 try {
+    // 1. RBAC Barrier & Ownership Validation
     $user = unitik_require_planner();
     $existing = unitik_find_event($id);
+    
     if ($existing === null) {
         unitik_json(404, ['ok' => false, 'error' => 'Event not found.']);
     }
@@ -23,15 +35,18 @@ try {
         unitik_json(403, ['ok' => false, 'error' => 'You can only change events you published.']);
     }
 
+    // 2. Cascade Deletion: Gate Scan Logs
     $logs = db()->prepare(
         'DELETE FROM gate_scan_logs
          WHERE ticket_id IN (SELECT id FROM tickets WHERE event_id = :id)'
     );
     $logs->execute(['id' => $id]);
 
+    // 3. Cascade Deletion: Associated Tickets
     $tickets = db()->prepare('DELETE FROM tickets WHERE event_id = :id');
     $tickets->execute(['id' => $id]);
 
+    // 4. Primary Entity Deletion: The Event
     $stmt = db()->prepare('DELETE FROM events WHERE id = :id');
     $stmt->execute(['id' => $id]);
 

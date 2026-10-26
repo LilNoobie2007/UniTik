@@ -2,19 +2,25 @@
 declare(strict_types=1);
 
 /**
- * UniTik database connection.
+ * UniTik Core Database Connection Module
  *
- * Supabase PostgreSQL via PDO. Credentials are read from the environment only:
- *   SUPABASE_DB_URL or DATABASE_URL
- *     postgresql://user:password@host:5432/postgres?sslmode=require
- *   or discrete vars: SUPABASE_DB_HOST, SUPABASE_DB_PORT, SUPABASE_DB_NAME,
- *   SUPABASE_DB_USER, SUPABASE_DB_PASSWORD, SUPABASE_DB_SSLMODE.
+ * Establishes a secure PDO connection to the Supabase PostgreSQL instance.
+ * Credentials are strictly injected via server environment variables to prevent
+ * hardcoded secrets in the repository. Supports connection pooling (port 6543)
+ * by toggling emulated prepares.
  */
 
+/**
+ * Singleton PDO factory. Ensures only one connection is opened per request lifecycle.
+ * 
+ * @throws RuntimeException If the database refuses the connection payload.
+ * @return PDO The active, connected database instance.
+ */
 function db(): PDO
 {
     static $pdo = null;
 
+    // Return existing instance if already booted
     if ($pdo instanceof PDO) {
         return $pdo;
     }
@@ -29,6 +35,7 @@ function db(): PDO
     );
 
     // Supabase's transaction pooler (6543) cannot hold server-side prepares.
+    // Emulated prepares must be used when pooling is active.
     $pooled = $config['port'] === 6543;
 
     try {
@@ -45,10 +52,14 @@ function db(): PDO
 }
 
 /**
+ * Resolves database configuration from multiple potential environment variables.
+ * Prioritizes full URI strings before falling back to discrete host/user/pass vars.
+ *
  * @return array{host: string, port: int, dbname: string, user: string, password: string, sslmode: string}
  */
 function unitik_db_config(): array
 {
+    // Attempt URI resolution first
     $url = getenv('SUPABASE_DB_URL');
     if (!is_string($url) || $url === '') {
         $url = getenv('DATABASE_URL');
@@ -58,10 +69,12 @@ function unitik_db_config(): array
         return unitik_config_from_url($url);
     }
 
+    // Fallback to discrete variable resolution
     $host = getenv('SUPABASE_DB_HOST');
     $user = getenv('SUPABASE_DB_USER');
     $password = getenv('SUPABASE_DB_PASSWORD');
 
+    // Halt execution if critical credentials are missing
     if (!is_string($host) || $host === '' || !is_string($user) || $user === '') {
         throw new RuntimeException(
             'Database is not configured. Set SUPABASE_DB_URL or SUPABASE_DB_HOST, SUPABASE_DB_USER, and SUPABASE_DB_PASSWORD.'
@@ -83,6 +96,9 @@ function unitik_db_config(): array
 }
 
 /**
+ * Parses a standard PostgreSQL connection URI into a mapped array.
+ * 
+ * @param string $url The raw connection string
  * @return array{host: string, port: int, dbname: string, user: string, password: string, sslmode: string}
  */
 function unitik_config_from_url(string $url): array
@@ -117,6 +133,10 @@ function unitik_config_from_url(string $url): array
     ];
 }
 
+/**
+ * Determines the strictness of the SSL connection required based on host infrastructure.
+ * Supabase managed instances strictly require SSL.
+ */
 function unitik_sslmode(string $host, ?string $explicit): string
 {
     $allowed = ['disable', 'allow', 'prefer', 'require', 'verify-ca', 'verify-full'];

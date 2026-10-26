@@ -2,6 +2,17 @@
 declare(strict_types=1);
 
 /**
+ * Shared Event Utilities & Payload Formatters
+ * 
+ * Contains strict input sanitization routines and database lookup helpers 
+ * used across all event-related endpoints to prevent SQL injection, 
+ * coordinate venue mapping, and standardize JSON output structure.
+ */
+
+/**
+ * Trims, type-casts, and thoroughly sanitizes raw client payloads.
+ * Validates logical bounds (character limits, negative prices, malformed dates).
+ * 
  * @param array<string, mixed> $body
  * @return array{title: string, description: ?string, event_date: string, venue: string, ticket_price: ?string}
  */
@@ -53,6 +64,12 @@ function unitik_event_input(array $body): array
     ];
 }
 
+/**
+ * Interrogates the database for an existing venue string. If not found, 
+ * automatically provisions a new row in the `venues` table.
+ * 
+ * @return string The UUID of the venue row.
+ */
 function unitik_resolve_venue(string $name): string
 {
     $stmt = db()->prepare(
@@ -71,6 +88,7 @@ function unitik_resolve_venue(string $name): string
     );
     $insert->execute(['name' => $name]);
     $created = $insert->fetch();
+    
     if ($created === false) {
         unitik_json(500, ['ok' => false, 'error' => 'Venue could not be saved.']);
     }
@@ -79,6 +97,8 @@ function unitik_resolve_venue(string $name): string
 }
 
 /**
+ * Standardizes the event object structure before flushing to the frontend client.
+ * 
  * @param array<string, mixed> $row
  * @return array{id: string, title: string, description: ?string, event_date: string, venue: string, organizer_name: string, can_manage: bool}
  */
@@ -102,6 +122,9 @@ function unitik_event_payload(array $row, bool $canManage): array
 }
 
 /**
+ * Performs a highly relational query to fetch a single event, aggressively 
+ * joining venues and organizers to prevent N+1 frontend query traps.
+ * 
  * @return array<string, mixed>|null
  */
 function unitik_find_event(string $id): ?array

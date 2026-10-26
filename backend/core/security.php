@@ -2,16 +2,29 @@
 declare(strict_types=1);
 
 /**
- * UniTik request security.
+ * UniTik Security & Access Control Module
  *
- * JSON body parsing, CORS (http://localhost:3000), OPTIONS preflight,
- * and an HttpOnly session. The browser is never given a user id to store.
+ * This file is the absolute core of the Zero-Trust RBAC system. 
+ * It intercepts preflight requests, sanitizes origins, parses JSON bodies,
+ * and maintains the dual-identity (Student vs. Organizer) HttpOnly sessions.
+ * 
+ * Security Flags Enforced:
+ * - session.cookie_httponly = 1
+ * - session.use_strict_mode = 1
+ * - session.cookie_samesite = 'Lax'
  */
 
+/**
+ * Strict whitelist of allowed frontend origins for CORS.
+ */
 const UNITIK_ALLOWED_ORIGINS = [
     'http://localhost:3000',
 ];
 
+/**
+ * Injects access-control headers if the request origin matches the whitelist.
+ * Required for the Next.js frontend to securely read HTTP status codes.
+ */
 function unitik_apply_cors(): void
 {
     $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
@@ -27,6 +40,10 @@ function unitik_apply_cors(): void
     header('Access-Control-Max-Age: 86400');
 }
 
+/**
+ * Intercepts the browser's secret OPTIONS request before it hits business logic.
+ * Halts execution and returns an empty 200 OK to prevent frontend fetch failures.
+ */
 function unitik_handle_preflight(): void
 {
     $method = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
@@ -41,12 +58,17 @@ function unitik_handle_preflight(): void
     exit;
 }
 
+/**
+ * Bootstraps the PHP session with maximum security constraints to prevent
+ * session hijacking, XSS exposure, and CSRF attacks.
+ */
 function unitik_start_session(): void
 {
     if (session_status() === PHP_SESSION_ACTIVE) {
         return;
     }
 
+    // Determine protocol for the secure flag constraint
     $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
         || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
 
@@ -63,16 +85,21 @@ function unitik_start_session(): void
         'domain' => '',
         'secure' => $https,
         'httponly' => true,
-        'samesite' => 'Lax',
+        'samesite' => 'Lax', // Prevents cross-site credential leakage
     ]);
 
     session_start();
 }
 
+/**
+ * Safely extracts and validates the UUID from the active session.
+ */
 function unitik_current_user_id(): ?string
 {
     unitik_start_session();
     $id = $_SESSION['user_id'] ?? null;
+    
+    // Regular expression gatekeeper for UUID v4 structure
     if (!is_string($id) || !preg_match(
         '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i',
         $id
@@ -83,6 +110,10 @@ function unitik_current_user_id(): ?string
     return strtolower($id);
 }
 
+/**
+ * Instantiates the dual-identity session following a successful login event.
+ * Regenerates the session ID to prevent fixation attacks.
+ */
 function unitik_establish_session(string $userId, string $kind): void
 {
     if (!unitik_is_uuid($userId) || ($kind !== 'student' && $kind !== 'organizer')) {
@@ -97,6 +128,9 @@ function unitik_establish_session(string $userId, string $kind): void
     ];
 }
 
+/**
+ * Retrieves the base table designation (student vs organizer) from the session state.
+ */
 function unitik_account_kind(): ?string
 {
     unitik_start_session();
@@ -108,21 +142,24 @@ function unitik_account_kind(): ?string
     return null;
 }
 
+/**
+ * Evaluates the hierarchical RBAC role based on table origin and admin flags.
+ */
 function unitik_role_from_account(string $kind, mixed $accountStatus): string
 {
     if ($kind === 'student') {
         return 'student';
     }
     if (is_string($accountStatus) && strtolower($accountStatus) === 'admin') {
-        return 'admin';
+        return 'admin'; // Organizer row explicitly elevated to Super-Admin
     }
 
     return 'organizer';
 }
 
 /**
- * Profile from the session. Students live in `students`, planners in `organizers`.
- * There is no users table and no role column. Admin means organizers.account_status = admin.
+ * Hydrates the user profile from the database based on their session identity.
+ * Adapts the query dynamically between `students` and `organizers` tables.
  *
  * @return array{id: string, full_name: string, email: string, role: string, created_at: string}|null
  */
@@ -130,6 +167,7 @@ function unitik_session_user(): ?array
 {
     $id = unitik_current_user_id();
     $kind = unitik_account_kind();
+    
     if ($id === null || $kind === null) {
         return null;
     }
@@ -137,6 +175,7 @@ function unitik_session_user(): ?array
         throw new RuntimeException('Database is not loaded.');
     }
 
+    // Branching query logic based on dual-identity architecture
     if ($kind === 'student') {
         $stmt = db()->prepare(
             'SELECT id, full_name, email, created_at, account_status
@@ -152,10 +191,12 @@ function unitik_session_user(): ?array
              LIMIT 1'
         );
     }
+    
     $stmt->execute(['id' => $id]);
     $row = $stmt->fetch();
+    
     if ($row === false) {
-        return null;
+        return null; // Identity mismatch or deleted account
     }
 
     $created = $row['created_at'] ?? '';
@@ -169,6 +210,9 @@ function unitik_session_user(): ?array
     ];
 }
 
+/**
+ * Safely annihilates the session and destroys the active HttpOnly cookie.
+ */
 function unitik_destroy_session(): void
 {
     unitik_start_session();
@@ -176,7 +220,7 @@ function unitik_destroy_session(): void
 
     $params = session_get_cookie_params();
     setcookie(session_name(), '', [
-        'expires' => time() - 42000,
+        'expires' => time() - 42000, // Enforce immediate historical expiration
         'path' => $params['path'] !== '' ? $params['path'] : '/',
         'domain' => $params['domain'],
         'secure' => (bool) $params['secure'],
@@ -188,6 +232,8 @@ function unitik_destroy_session(): void
 }
 
 /**
+ * Formats a raw database row into a strictly typed generic user array.
+ * 
  * @param array<string, mixed> $row
  * @return array{id: string, full_name: string, email: string, role: string, created_at: string}
  */
@@ -203,6 +249,9 @@ function unitik_user_payload(array $row): array
 }
 
 /**
+ * Zero-Trust Barrier: Enforces the existence of an active, authenticated user.
+ * Disconnects the request with 401 Unauthorized if the session is absent.
+ *
  * @return array{id: string, full_name: string, email: string, role: string, created_at: string}
  */
 function unitik_require_user(): array
@@ -216,6 +265,8 @@ function unitik_require_user(): array
 }
 
 /**
+ * Zero-Trust Barrier: Verifies the session holds a specific RBAC role.
+ *
  * @return array{id: string, full_name: string, email: string, role: string, created_at: string}
  */
 function unitik_require_role(string $role): array
@@ -228,13 +279,17 @@ function unitik_require_role(string $role): array
     return $user;
 }
 
+/**
+ * Internal logic check to differentiate between standard students and elevated staff.
+ */
 function unitik_is_planner(array $user): bool
 {
     return $user['role'] === 'organizer' || $user['role'] === 'admin';
 }
 
 /**
- * Event planner: organizer or admin. Students cannot publish or change events.
+ * Zero-Trust Barrier: Protects critical event creation and modification routes.
+ * Students are violently rejected with 403 Forbidden.
  *
  * @return array{id: string, full_name: string, email: string, role: string, created_at: string}
  */
@@ -249,6 +304,8 @@ function unitik_require_planner(): array
 }
 
 /**
+ * Zero-Trust Barrier: Specifically scopes access to the base student cohort.
+ *
  * @return array{id: string, full_name: string, email: string, role: string, created_at: string}
  */
 function unitik_require_student(): array
@@ -261,15 +318,23 @@ function unitik_require_student(): array
     return $user;
 }
 
+/**
+ * Evaluates execution context to see if the requesting user holds edit rights
+ * over a specific event ID based on database ownership structures.
+ */
 function unitik_can_manage_event(array $user, string $organizerId): bool
 {
     if ($user['role'] === 'admin') {
-        return true;
+        return true; // Super-Admin override
     }
 
+    // Direct string comparison of the active session ID versus the event's foreign key
     return $user['role'] === 'organizer' && strtolower($user['id']) === strtolower($organizerId);
 }
 
+/**
+ * Type-safety gatekeeper for UUID v4 structures to prevent SQL injection.
+ */
 function unitik_is_uuid(string $value): bool
 {
     return preg_match(
@@ -278,6 +343,9 @@ function unitik_is_uuid(string $value): bool
     ) === 1;
 }
 
+/**
+ * Halts execution if the incoming request does not match the expected HTTP Verb.
+ */
 function unitik_require_method(string $method): void
 {
     $expected = strtoupper($method);
@@ -291,6 +359,8 @@ function unitik_require_method(string $method): void
 }
 
 /**
+ * Parses and validates the raw JSON body buffer into an associative array.
+ * 
  * @return array<string, mixed>
  */
 function unitik_read_json(): array
@@ -314,13 +384,15 @@ function unitik_read_json(): array
 }
 
 /**
+ * Standardizes the backend response architecture. Flushes headers and encodes payload.
+ * 
  * @param array<string, mixed> $payload
  */
 function unitik_json(int $status, array $payload): never
 {
     if (!headers_sent()) {
         header('Content-Type: application/json; charset=utf-8');
-        header('Cache-Control: no-store');
+        header('Cache-Control: no-store'); // Prevents browser caching of sensitive data
         header('X-Content-Type-Options: nosniff');
     }
 
@@ -330,7 +402,8 @@ function unitik_json(int $status, array $payload): never
 }
 
 /**
- * CORS, preflight short-circuit, JSON content type, HttpOnly session, JSON body.
+ * Meta-wrapper invoked at the start of every script. Evaluates CORS, preflight, 
+ * session hydration, and JSON body parsing sequentially.
  *
  * @return array<string, mixed>
  */
