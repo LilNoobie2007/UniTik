@@ -1,55 +1,35 @@
-/*
- * File: frontend/app/layout.tsx
- * UNITIK CORE ARCHITECTURE MANDATE
- * - Frontend: Next.js / BFF
- * - Backend: PHP 8+ (PDO/PostgreSQL)
- * - DO NOT use client-side database calls.
- * - DO NOT trust client inputs. Always sanitize.
- * - Preserve existing logic during modifications.
- * /**
- * Root Application Shell for UniTik.
- * Integrates global CSS, campus pass styling, and Next.js metadata.
- * @param {React.ReactNode} children - The injected page content
- */
-
-import type { ReactNode } from "react";
-import Link from "next/link";
-import { AccountMenu } from "./components/AccountMenu";
+import type { Metadata } from "next";
+import { Fraunces, Outfit } from "next/font/google";
+import { Navbar } from "../components/Navbar";
 import "./globals.css";
 
-export const metadata = {
+const outfit = Outfit({
+  subsets: ["latin"],
+  variable: "--font-outfit",
+  display: "swap",
+});
+
+const fraunces = Fraunces({
+  subsets: ["latin"],
+  variable: "--font-fraunces",
+  display: "swap",
+});
+
+export const metadata: Metadata = {
   title: "UniTik",
-  description: "Campus tickets for students. Book a seat. Carry the code.",
+  description: "Campus events and tickets, held in one pass.",
+  icons: { icon: "/favicon.svg" },
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  const themeScript = `(function(){try{var k="unitik-theme";var t=localStorage.getItem(k);if(t!=="light"&&t!=="dark"){t=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}document.documentElement.classList.toggle("dark",t==="dark");document.documentElement.dataset.theme=t;}catch(e){}})();`;
+
   return (
-    <html lang="en">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600&family=Fraunces:opsz,wght@9..144,500&family=IBM+Plex+Mono&display=swap"
-          rel="stylesheet"
-        />
-      </head>
-      <body>
-        <div className="shell">
-          <header className="top">
-            <Link href="/" className="brand">
-              Uni<span>Tik</span>
-            </Link>
-            <nav className="nav">
-              <Link href="/#events">Events</Link>
-              <Link href="/#wallet">My tickets</Link>
-              <Link href="/scanner">Gate</Link>
-              <Link href="/host">Host</Link>
-              <Link href="/admin">Admin</Link>
-              <AccountMenu />
-            </nav>
-          </header>
-          {children}
-        </div>
+    <html lang="en" className={`${outfit.variable} ${fraunces.variable}`} suppressHydrationWarning>
+      <body className="min-h-dvh bg-bg font-sans text-fg antialiased">
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        <Navbar />
+        <main>{children}</main>
       </body>
     </html>
   );

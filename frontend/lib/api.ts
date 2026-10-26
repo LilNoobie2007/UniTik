@@ -1,40 +1,76 @@
-/*
- * File: frontend/lib/api.ts
- * UNITIK CORE ARCHITECTURE MANDATE
- * - Frontend: Next.js / BFF
- * - Backend: PHP 8+ (PDO/PostgreSQL)
- * - DO NOT use client-side database calls.
- * - DO NOT trust client inputs. Always sanitize.
- * - Preserve existing logic during modifications.
- *
- * The browser never sends a user id. The PHP session cookie is the identity.
+/**
+ * UniTik API client.
+ * Session auth is the HttpOnly cookie. Do not write a user id to localStorage or a JS cookie.
  */
 
-import { logError } from './logger';
+export const API_BASE = "http://localhost/UniTik/backend";
 
-export type ApiError = Error & { status?: number };
-  
-const base = () => process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
+export type Role = "student" | "organizer" | "admin";
 
-export async function api<T>(path: string, body?: unknown): Promise<T> {
-  const response = await fetch(`${base()}${path}`, {
-    method: body === undefined ? "GET" : "POST",
-    credentials: "include",
-    headers: body === undefined ? undefined : { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+export type User = {
+  id: string;
+  full_name: string;
+  email: string;
+  role: Role;
+  created_at: string;
+};
 
-  const payload = (await response.json()) as {
-    status?: string;
-    message?: string;
-    data?: T;
-  };
+export type AuthResponse = {
+  ok: true;
+  user: User;
+};
 
-  if (!response.ok || payload.status === "error") {
-    const error = new Error(payload.message || "Request failed.") as ApiError;
-    error.status = response.status;
-    throw error;
+export class ApiError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
+function endpoint(path: string): string {
+  const suffix = path.startsWith("/") ? path : `/${path}`;
+  return `${API_BASE}${suffix}`;
+}
+
+export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const headers = new Headers(init.headers);
+  if (!headers.has("Accept")) {
+    headers.set("Accept", "application/json");
+  }
+  const isForm = typeof FormData !== "undefined" && init.body instanceof FormData;
+  if (init.body !== undefined && !isForm && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
   }
 
-  return payload.data as T;
+  const response = await fetch(endpoint(path), {
+    ...init,
+    headers,
+    credentials: "include",
+  });
+
+  let payload: unknown = null;
+  const text = await response.text();
+  if (text !== "") {
+    try {
+      payload = JSON.parse(text) as unknown;
+    } catch {
+      payload = null;
+    }
+  }
+
+  if (!response.ok) {
+    const message =
+      payload !== null &&
+      typeof payload === "object" &&
+      "error" in payload &&
+      typeof payload.error === "string"
+        ? payload.error
+        : "Request failed.";
+    throw new ApiError(response.status, message);
+  }
+
+  return payload as T;
 }

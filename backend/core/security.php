@@ -1,110 +1,349 @@
 <?php
 declare(strict_types=1);
 
-/*
- * File: backend/core/security.php
- * UNITIK CORE ARCHITECTURE MANDATE
- * - Frontend: Next.js / BFF
- * - Backend: PHP 8+ (PDO/PostgreSQL)
- * - DO NOT use client-side database calls.
- * - DO NOT trust client inputs. Always sanitize.
- * - Preserve existing logic during modifications.
+/**
+ * UniTik request security.
  *
- * Text fields only. Do not run passwords through htmlspecialchars —
- * that changes the secret before password_hash / password_verify.
+ * JSON body parsing, CORS (http://localhost:3000), OPTIONS preflight,
+ * and an HttpOnly session. The browser is never given a user id to store.
  */
 
-function sanitizeText(mixed $value): string
+const UNITIK_ALLOWED_ORIGINS = [
+    'http://localhost:3000',
+];
+
+function unitik_apply_cors(): void
 {
-    $text = is_string($value) ? $value : '';
-    $text = trim(stripslashes($text));
-    return htmlspecialchars($text, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+    if (!is_string($origin) || !in_array($origin, UNITIK_ALLOWED_ORIGINS, true)) {
+        return;
+    }
+
+    header('Access-Control-Allow-Origin: ' . $origin);
+    header('Vary: Origin');
+    header('Access-Control-Allow-Credentials: true');
+    header('Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS');
+    header('Access-Control-Allow-Headers: Content-Type, Accept, Authorization, X-Requested-With');
+    header('Access-Control-Max-Age: 86400');
 }
 
-function readJsonBody(): array
+function unitik_handle_preflight(): void
 {
-    $raw = file_get_contents('php://input') ?: '';
-    $data = json_decode($raw, true);
-    return is_array($data) ? $data : [];
-}
+    $method = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+    if ($method !== 'OPTIONS') {
+        return;
+    }
 
-function jsonResponse(int $statusCode, array $payload): never
-{
-    http_response_code($statusCode);
-    header('Content-Type: application/json');
-    echo json_encode($payload);
+    unitik_apply_cors();
+    http_response_code(200);
+    header('Content-Length: 0');
+    header('Cache-Control: no-store');
     exit;
 }
 
-function allowCors(): void
-{
-    $origin = getenv('ALLOWED_ORIGIN') ?: '';
-    if ($origin !== '') {
-        header('Access-Control-Allow-Origin: ' . $origin);
-        header('Access-Control-Allow-Credentials: true');
-        header('Vary: Origin');
-    }
-    header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-    header('Access-Control-Allow-Headers: Content-Type');
-    if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
-        http_response_code(204);
-        exit;
-    }
-}
-
-function startAuthSession(): void
+function unitik_start_session(): void
 {
     if (session_status() === PHP_SESSION_ACTIVE) {
         return;
     }
-    $secure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off');
+
+    $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
+
+    ini_set('session.use_strict_mode', '1');
+    ini_set('session.use_only_cookies', '1');
+    ini_set('session.cookie_httponly', '1');
+    ini_set('session.cookie_secure', $https ? '1' : '0');
+    ini_set('session.cookie_samesite', 'Lax');
+
+    session_name('UNITIK_SESSION');
     session_set_cookie_params([
         'lifetime' => 0,
         'path' => '/',
-        'secure' => $secure,
+        'domain' => '',
+        'secure' => $https,
         'httponly' => true,
         'samesite' => 'Lax',
     ]);
+
     session_start();
 }
 
-function requireActiveUser(PDO $pdo): array
+function unitik_current_user_id(): ?string
 {
-    startAuthSession();
-    $userId = $_SESSION['user_id'] ?? '';
-    if (!is_string($userId) || $userId === '') {
-        jsonResponse(401, ['status' => 'error', 'message' => 'Sign in required.']);
+    unitik_start_session();
+    $id = $_SESSION['user_id'] ?? null;
+    if (!is_string($id) || !preg_match(
+        '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i',
+        $id
+    )) {
+        return null;
     }
 
-    $stmt = $pdo->prepare(
-        'SELECT id, full_name, role, account_status
-         FROM users
-         WHERE id = :id'
-    );
-    $stmt->execute(['id' => $userId]);
-    $user = $stmt->fetch();
-    if (!is_array($user)) {
-        $_SESSION = [];
-        jsonResponse(401, ['status' => 'error', 'message' => 'Sign in required.']);
+    return strtolower($id);
+}
+
+function unitik_establish_session(string $userId, string $kind): void
+{
+    if (!unitik_is_uuid($userId) || ($kind !== 'student' && $kind !== 'organizer')) {
+        throw new InvalidArgumentException('Invalid account.');
     }
-    if ($user['account_status'] !== 'active') {
-        jsonResponse(403, ['status' => 'error', 'message' => 'This campus pass is suspended.']);
+
+    unitik_start_session();
+    session_regenerate_id(true);
+    $_SESSION = [
+        'user_id' => strtolower($userId),
+        'account_kind' => $kind,
+    ];
+}
+
+function unitik_account_kind(): ?string
+{
+    unitik_start_session();
+    $kind = $_SESSION['account_kind'] ?? null;
+    if ($kind === 'student' || $kind === 'organizer') {
+        return $kind;
+    }
+
+    return null;
+}
+
+function unitik_role_from_account(string $kind, mixed $accountStatus): string
+{
+    if ($kind === 'student') {
+        return 'student';
+    }
+    if (is_string($accountStatus) && strtolower($accountStatus) === 'admin') {
+        return 'admin';
+    }
+
+    return 'organizer';
+}
+
+/**
+ * Profile from the session. Students live in `students`, planners in `organizers`.
+ * There is no users table and no role column. Admin means organizers.account_status = admin.
+ *
+ * @return array{id: string, full_name: string, email: string, role: string, created_at: string}|null
+ */
+function unitik_session_user(): ?array
+{
+    $id = unitik_current_user_id();
+    $kind = unitik_account_kind();
+    if ($id === null || $kind === null) {
+        return null;
+    }
+    if (!function_exists('db')) {
+        throw new RuntimeException('Database is not loaded.');
+    }
+
+    if ($kind === 'student') {
+        $stmt = db()->prepare(
+            'SELECT id, full_name, email, created_at, account_status
+             FROM students
+             WHERE id = :id
+             LIMIT 1'
+        );
+    } else {
+        $stmt = db()->prepare(
+            'SELECT id, full_name, email, account_status
+             FROM organizers
+             WHERE id = :id
+             LIMIT 1'
+        );
+    }
+    $stmt->execute(['id' => $id]);
+    $row = $stmt->fetch();
+    if ($row === false) {
+        return null;
+    }
+
+    $created = $row['created_at'] ?? '';
+
+    return [
+        'id' => (string) $row['id'],
+        'full_name' => (string) $row['full_name'],
+        'email' => (string) $row['email'],
+        'role' => unitik_role_from_account($kind, $row['account_status'] ?? null),
+        'created_at' => $created === null ? '' : (string) $created,
+    ];
+}
+
+function unitik_destroy_session(): void
+{
+    unitik_start_session();
+    $_SESSION = [];
+
+    $params = session_get_cookie_params();
+    setcookie(session_name(), '', [
+        'expires' => time() - 42000,
+        'path' => $params['path'] !== '' ? $params['path'] : '/',
+        'domain' => $params['domain'],
+        'secure' => (bool) $params['secure'],
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
+
+    session_destroy();
+}
+
+/**
+ * @param array<string, mixed> $row
+ * @return array{id: string, full_name: string, email: string, role: string, created_at: string}
+ */
+function unitik_user_payload(array $row): array
+{
+    return [
+        'id' => (string) $row['id'],
+        'full_name' => (string) $row['full_name'],
+        'email' => (string) $row['email'],
+        'role' => (string) $row['role'],
+        'created_at' => isset($row['created_at']) && $row['created_at'] !== null ? (string) $row['created_at'] : '',
+    ];
+}
+
+/**
+ * @return array{id: string, full_name: string, email: string, role: string, created_at: string}
+ */
+function unitik_require_user(): array
+{
+    $user = unitik_session_user();
+    if ($user === null) {
+        unitik_json(401, ['ok' => false, 'error' => 'Not signed in.']);
     }
 
     return $user;
 }
 
-function requireAdmin(PDO $pdo): array
+/**
+ * @return array{id: string, full_name: string, email: string, role: string, created_at: string}
+ */
+function unitik_require_role(string $role): array
 {
-    $user = requireActiveUser($pdo);
-    if ($user['role'] !== 'admin') {
-        jsonResponse(403, ['status' => 'error', 'message' => 'Campus admin only.']);
+    $user = unitik_require_user();
+    if ($user['role'] !== $role) {
+        unitik_json(403, ['ok' => false, 'error' => 'You do not have access to this.']);
     }
+
     return $user;
 }
 
+function unitik_is_planner(array $user): bool
+{
+    return $user['role'] === 'organizer' || $user['role'] === 'admin';
+}
 
-// Added custom timestamp logger for PHP endpoints
-function unitik_log($message) {
-    error_log("[" . date("Y-m-d H:i:s") . "] " . $message);
+/**
+ * Event planner: organizer or admin. Students cannot publish or change events.
+ *
+ * @return array{id: string, full_name: string, email: string, role: string, created_at: string}
+ */
+function unitik_require_planner(): array
+{
+    $user = unitik_require_user();
+    if (!unitik_is_planner($user)) {
+        unitik_json(403, ['ok' => false, 'error' => 'Only an event planner can do that.']);
+    }
+
+    return $user;
+}
+
+/**
+ * @return array{id: string, full_name: string, email: string, role: string, created_at: string}
+ */
+function unitik_require_student(): array
+{
+    $user = unitik_require_user();
+    if ($user['role'] !== 'student') {
+        unitik_json(403, ['ok' => false, 'error' => 'Only a student can do that.']);
+    }
+
+    return $user;
+}
+
+function unitik_can_manage_event(array $user, string $organizerId): bool
+{
+    if ($user['role'] === 'admin') {
+        return true;
+    }
+
+    return $user['role'] === 'organizer' && strtolower($user['id']) === strtolower($organizerId);
+}
+
+function unitik_is_uuid(string $value): bool
+{
+    return preg_match(
+        '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i',
+        $value
+    ) === 1;
+}
+
+function unitik_require_method(string $method): void
+{
+    $expected = strtoupper($method);
+    $actual = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+    if ($actual === $expected) {
+        return;
+    }
+
+    header('Allow: ' . $expected);
+    unitik_json(405, ['ok' => false, 'error' => 'Method not allowed.']);
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function unitik_read_json(): array
+{
+    $raw = file_get_contents('php://input');
+    if ($raw === false || trim($raw) === '') {
+        return [];
+    }
+
+    try {
+        $decoded = json_decode($raw, true, 32, JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        unitik_json(400, ['ok' => false, 'error' => 'Invalid JSON payload.']);
+    }
+
+    if (!is_array($decoded)) {
+        unitik_json(400, ['ok' => false, 'error' => 'JSON payload must be an object.']);
+    }
+
+    return $decoded;
+}
+
+/**
+ * @param array<string, mixed> $payload
+ */
+function unitik_json(int $status, array $payload): never
+{
+    if (!headers_sent()) {
+        header('Content-Type: application/json; charset=utf-8');
+        header('Cache-Control: no-store');
+        header('X-Content-Type-Options: nosniff');
+    }
+
+    http_response_code($status);
+    echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    exit;
+}
+
+/**
+ * CORS, preflight short-circuit, JSON content type, HttpOnly session, JSON body.
+ *
+ * @return array<string, mixed>
+ */
+function unitik_bootstrap(bool $readBody = true): array
+{
+    unitik_apply_cors();
+    unitik_handle_preflight();
+
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store');
+    header('X-Content-Type-Options: nosniff');
+
+    unitik_start_session();
+
+    return $readBody ? unitik_read_json() : [];
 }

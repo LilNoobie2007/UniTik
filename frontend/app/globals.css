@@ -1,82 +1,63 @@
-/*
- * File: frontend/app/globals.css
- */
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --font-sans: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-fraunces), Georgia, "Times New Roman", serif;
+  --radius-card: 1.25rem;
+}
 
 :root {
-  --bg: #0b0c0e;
-  --surface: #14151a;
-  --elevated: #1c1d24;
-  --fg: #f2f0ea;
-  --muted: #9c9a93;
-  --accent: #5e9a92;
-  --paper: #e7e1d4;
-  --ink: #161410;
-  --border: #2a2b32;
-  --danger: #c45c4a;
-  --ok: #6ea57a;
-  --sans: "Figtree", "Segoe UI", sans-serif;
-  --display: "Fraunces", "Times New Roman", serif;
-  --mono: "IBM Plex Mono", ui-monospace, monospace;
+  --bg: #f3efe6;
+  --surface: #fffdf8;
+  --fg: #1c1915;
+  --muted: #5f584e;
+  --line: #e3dacb;
+  --accent: #1c1915;
+  --accent-fg: #f7f3ea;
+  color-scheme: light;
 }
 
-* { box-sizing: border-box; }
-html, body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--sans); }
-a { color: inherit; }
-button, [role="button"] { cursor: pointer; }
-button:disabled { cursor: not-allowed; opacity: 0.55; }
-
-.shell { width: min(1100px, calc(100% - 32px)); margin: 0 auto; }
-.top {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 20px 0 8px; gap: 16px;
+.dark {
+  --bg: #111311;
+  --surface: #1b1e1b;
+  --fg: #f4f0e6;
+  --muted: #c4baad;
+  --line: #31362f;
+  --accent: #e0b15b;
+  --accent-fg: #1c1408;
+  color-scheme: dark;
 }
-.brand { font-weight: 700; letter-spacing: -0.03em; text-decoration: none; font-size: 20px; }
-.brand span { color: var(--accent); }
-.nav { display: flex; gap: 16px; align-items: center; color: var(--muted); font-size: 14px; }
-.nav a { text-decoration: none; }
 
-h1, h2 { font-family: var(--display); font-weight: 500; letter-spacing: -0.03em; }
-.lede { color: var(--muted); max-width: 40rem; line-height: 1.5; }
-.grid { display: grid; gap: 16px; grid-template-columns: 1fr; }
-@media (min-width: 800px) { .grid { grid-template-columns: 1.1fr 0.9fr; } }
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
 
-.card, .ticket, .panel {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  padding: 16px;
-}
-.card h3, .ticket h3 { margin: 8px 0; }
-.meta { color: var(--muted); font-size: 14px; line-height: 1.45; }
-.row { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
-.price { font-weight: 650; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+  }
 
-.btn {
-  border: 0; border-radius: 12px; min-height: 44px; padding: 0 16px;
-  background: var(--paper); color: var(--ink); font-weight: 650;
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
 }
-a.btn { display: inline-flex; align-items: center; text-decoration: none; }
-.btn.secondary { background: var(--elevated); color: var(--fg); border: 1px solid var(--border); }
-.btn.block { width: 100%; }
 
-label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
-input {
-  width: 100%; min-height: 44px; border-radius: 12px; border: 1px solid var(--border);
-  background: var(--elevated); color: var(--fg); padding: 0 12px; margin-bottom: 12px;
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+  }
 }
-.stack { display: grid; gap: 12px; }
-.error { color: var(--danger); font-size: 14px; }
-.ok { color: var(--ok); }
-.kicker { font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
-.hash { font-family: var(--mono); font-size: 12px; word-break: break-all; color: var(--ink); }
-.qr { width: 168px; height: 168px; display: block; margin-top: 12px; }
-.camera { width: 100%; border-radius: 16px; background: #000; aspect-ratio: 3 / 4; object-fit: cover; }
-.ticket { background: var(--paper); color: var(--ink); }
-.ticket .meta { color: rgba(22, 20, 16, 0.7); }
-.badge {
-  display: inline-flex; border-radius: 999px; border: 1px solid var(--border);
-  padding: 2px 8px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
-}
-.verdict { border-radius: 20px; padding: 16px; border: 1px solid var(--border); }
-.verdict.approved { border-color: var(--ok); color: var(--ok); }
-.verdict.denied { border-color: var(--danger); color: var(--danger); }
