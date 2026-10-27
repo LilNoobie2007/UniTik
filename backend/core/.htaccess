@@ -1,0 +1,5 @@
+# UniTik Core Module Protection
+# Deny direct external HTTP requests to internal configuration scripts
+
+Options -Indexes
+Require all denied

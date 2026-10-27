@@ -1,4 +1,16 @@
-Options -Indexes
-<IfModule mod_authz_core.c>
+# UniTik Upload Sandbox Security
+# Strictly disable script execution for uploaded ID cards
+
+Options -Indexes -ExecCGI
+RemoveHandler .php .phtml .php3 .php4 .php5 .php7 .php8 .phar .cgi .pl .py
+RemoveType .php .phtml .php3 .php4 .php5 .php7 .php8 .phar .cgi .pl .py
+php_flag engine off
+
+<FilesMatch "\.(?i:php|phtml|phar|cgi|pl|py|sh|exe|bat)$">
     Require all denied
+</FilesMatch>
+
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set Content-Disposition "attachment"
 </IfModule>

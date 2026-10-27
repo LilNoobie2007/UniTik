@@ -1,18 +1,33 @@
-# Exclude Node.js dependencies
+# Exclude Node.js dependencies & build artifacts
 frontend/node_modules/
 frontend/.next/
+frontend/out/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
 # Exclude PHP dependencies
 vendor/
 backend/vendor/
 
-# Exclude Python environments
+# Exclude Uploaded ID Cards (PII Protection)
+backend/uploads/*
+!backend/uploads/.htaccess
+!backend/uploads/.gitkeep
+
+# Exclude Python & Go environments
 microservices/py-engine/venv/
 __pycache__/
+*.pyc
 
-# Exclude Secrets (CRITICAL)
+# Exclude Secrets & Local Env Variants (CRITICAL)
 .env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 
-# System Files
+# Editor & System Files
 .DS_Store
 Thumbs.db
+*.swp
