@@ -20,32 +20,23 @@ function db(): PDO
 {
     static $pdo = null;
 
-    // Return existing instance if already booted
     if ($pdo instanceof PDO) {
         return $pdo;
     }
 
-    $config = unitik_db_config();
-    $dsn = sprintf(
-        'pgsql:host=%s;port=%d;dbname=%s;sslmode=%s',
-        $config['host'],
-        $config['port'],
-        $config['dbname'],
-        $config['sslmode']
-    );
-
-    // Supabase's transaction pooler (6543) cannot hold server-side prepares.
-    // Emulated prepares must be used when pooling is active.
-    $pooled = $config['port'] === 6543;
+    // Direct hardcoded connection for XAMPP stability
+    $dsn = 'pgsql:host=aws-0-ap-southeast-1.pooler.supabase.com;port=6543;dbname=postgres;sslmode=require';
+    $user = 'postgres.eadjhibjwolfhunrtljs'; // e.g. postgres.abcdefghijklm
+    $password = 'Unitik@9901';
 
     try {
-        $pdo = new PDO($dsn, $config['user'], $config['password'], [
+        $pdo = new PDO($dsn, $user, $password, [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-            PDO::ATTR_EMULATE_PREPARES => $pooled,
+            PDO::ATTR_EMULATE_PREPARES => true, // required for port 6543 pooler
         ]);
     } catch (PDOException $e) {
-        throw new RuntimeException('Database connection failed.', 0, $e);
+        throw new RuntimeException('Database connection failed: ' . $e->getMessage(), 0, $e);
     }
 
     return $pdo;
