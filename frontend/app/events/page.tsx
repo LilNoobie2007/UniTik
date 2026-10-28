@@ -10,6 +10,10 @@ type CampusEvent = {
   description: string | null;
   event_date: string;
   venue: string;
+  venue_url?: string | null;
+  image_url?: string | null;
+  capacity?: number;
+  max_tickets_per_user?: number;
   organizer_name: string;
   can_manage: boolean;
 };
@@ -29,9 +33,22 @@ type Draft = {
   description: string;
   event_date: string;
   venue: string;
+  venue_url: string;
+  image_url: string;
+  capacity: string;
+  max_tickets_per_user: string;
 };
 
-const emptyDraft: Draft = { title: "", description: "", event_date: "", venue: "" };
+const emptyDraft: Draft = {
+  title: "",
+  description: "",
+  event_date: "",
+  venue: "",
+  venue_url: "",
+  image_url: "",
+  capacity: "200",
+  max_tickets_per_user: "5",
+};
 
 function failureMessage(err: unknown): string {
   if (err instanceof ApiError) return err.message;
@@ -111,6 +128,10 @@ export default function EventsPage() {
       title: source.title.trim(),
       description: source.description.trim(),
       venue: source.venue.trim(),
+      venue_url: source.venue_url.trim(),
+      image_url: source.image_url.trim(),
+      capacity: parseInt(source.capacity, 10) || 200,
+      max_tickets_per_user: parseInt(source.max_tickets_per_user, 10) || 5,
       event_date: new Date(source.event_date).toISOString(),
     };
   }
@@ -219,11 +240,11 @@ export default function EventsPage() {
         </div>
       ) : null}
 
-      {status === "ready" && user !== null && !planner ? (
+      {status === "ready" && user !== null && !isPlanner(user) ? (
         <div className="mt-4 max-w-xl">
           <h1 className="font-display text-5xl leading-tight text-fg">Students book, they don't publish.</h1>
           <p className="mt-5 text-base leading-normal text-muted">
-            Your account can view events and hold one ticket each. Publishing stays with event planners.
+            Your account can view events and hold tickets. Publishing stays with event planners.
           </p>
           <Link
             href="/wallet"
@@ -250,39 +271,98 @@ export default function EventsPage() {
 
           <form onSubmit={publish} className="mt-10 grid gap-5 rounded-card border border-line bg-surface p-6 md:p-8">
             <h2 className="font-display text-3xl text-fg">New event</h2>
-            <label className="block text-sm text-fg" htmlFor="title">
-              Title
+            
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="block text-sm text-fg" htmlFor="title">
+                Title
+                <input
+                  id="title"
+                  value={draft.title}
+                  onChange={(event) => setDraft({ ...draft, title: event.target.value })}
+                  className="mt-2 h-12 w-full rounded-2xl border border-line bg-bg px-4 text-base text-fg"
+                  required
+                  maxLength={200}
+                />
+              </label>
+              <label className="block text-sm text-fg" htmlFor="when">
+                When
+                <input
+                  id="when"
+                  type="datetime-local"
+                  value={draft.event_date}
+                  onChange={(event) => setDraft({ ...draft, event_date: event.target.value })}
+                  className="mt-2 h-12 w-full rounded-2xl border border-line bg-bg px-4 text-base text-fg"
+                  required
+                />
+              </label>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="block text-sm text-fg" htmlFor="venue">
+                Venue name
+                <input
+                  id="venue"
+                  value={draft.venue}
+                  onChange={(event) => setDraft({ ...draft, venue: event.target.value })}
+                  className="mt-2 h-12 w-full rounded-2xl border border-line bg-bg px-4 text-base text-fg"
+                  required
+                  maxLength={100}
+                />
+              </label>
+              <label className="block text-sm text-fg" htmlFor="venue_url">
+                Venue URL (Maps/Directions)
+                <input
+                  id="venue_url"
+                  type="url"
+                  value={draft.venue_url}
+                  onChange={(event) => setDraft({ ...draft, venue_url: event.target.value })}
+                  className="mt-2 h-12 w-full rounded-2xl border border-line bg-bg px-4 text-base text-fg"
+                  placeholder="https://maps.google.com/..."
+                />
+              </label>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-3">
+              <label className="block text-sm text-fg sm:col-span-2" htmlFor="image_url">
+                Event Image URL
+                <input
+                  id="image_url"
+                  type="url"
+                  value={draft.image_url}
+                  onChange={(event) => setDraft({ ...draft, image_url: event.target.value })}
+                  className="mt-2 h-12 w-full rounded-2xl border border-line bg-bg px-4 text-base text-fg"
+                  placeholder="https://images.unsplash.com/..."
+                />
+              </label>
+              <label className="block text-sm text-fg" htmlFor="capacity">
+                Capacity
+                <input
+                  id="capacity"
+                  type="number"
+                  min="1"
+                  max="10000"
+                  value={draft.capacity}
+                  onChange={(event) => setDraft({ ...draft, capacity: event.target.value })}
+                  className="mt-2 h-12 w-full rounded-2xl border border-line bg-bg px-4 text-base text-fg"
+                  required
+                />
+              </label>
+            </div>
+
+            <label className="block text-sm text-fg" htmlFor="max_tickets_per_user">
+              Max Tickets Per Student Account (1–10)
               <input
-                id="title"
-                value={draft.title}
-                onChange={(event) => setDraft({ ...draft, title: event.target.value })}
+                id="max_tickets_per_user"
+                type="number"
+                min="1"
+                max="10"
+                value={draft.max_tickets_per_user}
+                onChange={(event) => setDraft({ ...draft, max_tickets_per_user: event.target.value })}
                 className="mt-2 h-12 w-full rounded-2xl border border-line bg-bg px-4 text-base text-fg"
                 required
-                maxLength={200}
               />
             </label>
-            <label className="block text-sm text-fg" htmlFor="venue">
-              Venue
-              <input
-                id="venue"
-                value={draft.venue}
-                onChange={(event) => setDraft({ ...draft, venue: event.target.value })}
-                className="mt-2 h-12 w-full rounded-2xl border border-line bg-bg px-4 text-base text-fg"
-                required
-                maxLength={100}
-              />
-            </label>
-            <label className="block text-sm text-fg" htmlFor="when">
-              When
-              <input
-                id="when"
-                type="datetime-local"
-                value={draft.event_date}
-                onChange={(event) => setDraft({ ...draft, event_date: event.target.value })}
-                className="mt-2 h-12 w-full rounded-2xl border border-line bg-bg px-4 text-base text-fg"
-                required
-              />
-            </label>
+
             <label className="block text-sm text-fg" htmlFor="description">
               Description
               <textarea
@@ -293,6 +373,7 @@ export default function EventsPage() {
                 maxLength={4000}
               />
             </label>
+
             <button
               type="submit"
               disabled={pending === "create"}
@@ -358,10 +439,15 @@ export default function EventsPage() {
                       <p className="mt-1 text-sm text-muted">
                         {event.venue} · {formatWhen(event.event_date)}
                       </p>
+                      {event.venue_url ? (
+                        <a href={event.venue_url} target="_blank" rel="noreferrer" className="text-xs text-accent underline mt-1 block">
+                          View venue map & directions ↗
+                        </a>
+                      ) : null}
                       {event.description ? (
                         <p className="mt-3 max-w-xl text-base leading-normal text-muted">{event.description}</p>
                       ) : null}
-                      <p className="mt-2 text-sm text-muted">Posted by {event.organizer_name}</p>
+                      <p className="mt-2 text-sm text-muted">Posted by {event.organizer_name} (Max {event.max_tickets_per_user} tickets/student)</p>
                     </div>
                     {event.can_manage ? (
                       <div className="flex shrink-0 flex-wrap gap-2">
@@ -373,6 +459,10 @@ export default function EventsPage() {
                             setEditDraft({
                               title: event.title,
                               venue: event.venue,
+                              venue_url: event.venue_url ?? "",
+                              image_url: event.image_url ?? "",
+                              capacity: String(event.capacity ?? 200),
+                              max_tickets_per_user: String(event.max_tickets_per_user ?? 5),
                               description: event.description ?? "",
                               event_date: toLocalInput(event.event_date),
                             });
