@@ -10,30 +10,34 @@
   --color-line: var(--line);
   --color-accent: var(--accent);
   --color-accent-fg: var(--accent-fg);
-  --font-sans: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
-  --font-display: var(--font-fraunces), Georgia, "Times New Roman", serif;
-  --radius-card: 1.25rem;
+  --color-stamp: var(--stamp);
+  --font-sans: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, SFMono-Regular, monospace;
+  --radius-card: 0.5rem;
 }
 
 :root {
-  --bg: #f3efe6;
-  --surface: #fffdf8;
-  --fg: #1c1915;
-  --muted: #5f584e;
-  --line: #e3dacb;
-  --accent: #1c1915;
-  --accent-fg: #f7f3ea;
+  --bg: #f6f4ef;
+  --surface: #ffffff;
+  --fg: #111111;
+  --muted: #5c564c;
+  --line: #ddd8ce;
+  --accent: #e63b19;
+  --accent-fg: #ffffff;
+  --stamp: #15803d;
   color-scheme: light;
 }
 
 .dark {
-  --bg: #111311;
-  --surface: #1b1e1b;
-  --fg: #f4f0e6;
-  --muted: #c4baad;
-  --line: #31362f;
-  --accent: #e0b15b;
-  --accent-fg: #1c1408;
+  --bg: #111111;
+  --surface: #1c1c1c;
+  --fg: #f6f4ef;
+  --muted: #c8c2b6;
+  --line: #3f3c36;
+  --accent: #e63b19;
+  --accent-fg: #ffffff;
+  --stamp: #15803d;
   color-scheme: dark;
 }
 

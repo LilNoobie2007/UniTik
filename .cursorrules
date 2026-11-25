@@ -1,0 +1,20 @@
+You are an expert full-stack developer working on "UniTik," a campus event and ticketing system.
+
+Project Architecture:
+- Frontend: Next.js (TypeScript, App Router) inside `frontend/` (`frontend/app/`, `frontend/components/`, `frontend/lib/api.ts`). Deployed on Vercel.
+- Backend (BFF): Native PHP 8.2 inside `backend/` (No frameworks like Laravel or Symfony).
+- Database: PostgreSQL hosted on Supabase (Strict 3NF schema defined in `docs/schema.sql`).
+- Integrations: PHPMailer for SMTP, Python/GoLang microservices for background tasks.
+
+Strict Coding Guidelines:
+1. PHP Backend: Always use native PHP 8.2 with PDO for database connections. All API endpoints MUST return strict JSON matching the existing contract: `{"ok": true, ...}` on success or `{"ok": false, "error": "..."}` on failure. Never output HTML from PHP endpoints and never switch to `{"status": "success"}`.
+2. Frontend: Use strict TypeScript typing (no `any`). Communicate with the backend exclusively via `NEXT_PUBLIC_API_BASE_URL` through `frontend/lib/api.ts`. Do NOT create a `src/` folder—keep routes in `frontend/app/` and shared components in `frontend/components/`.
+3. Database: Always reference `docs/schema.sql` and `docs/diagrams/API.md` before changing queries or TypeScript types. Maintain strict 3NF; never suggest NoSQL or schema-less approaches.
+4. Safety & Credits: Provide code separated into clear, copyable blocks. Never modify `vendor/`. Edit ONLY the files required for the active task and never rewrite unrelated working logic.
+
+Strict UI/UX Design System (Editorial Ticket Stub):
+- NEVER use dark-slate/cyan/purple glowing gradients, glassmorphism (`backdrop-blur`), or emojis in UI headings/buttons.
+- Palette: Paper `#F6F4EF`, white `#FFFFFF` cards, carbon ink `#111111`, hairlines `#DDD8CE`, signal vermilion `#E63B19`, stamp green `#15803D`.
+- Typography: `Space Grotesk` (display), `Plus Jakarta Sans` (body), and `JetBrains Mono` (`tabular-nums` for dates, prices, counts, and pass codes).
+- Icons: Use `lucide-react` (`strokeWidth={1.75}`) exclusively.
+- Geometry: Crisp `1px` borders, tactile offset buttons, and perforated tear-off ticket stubs for events and passes.

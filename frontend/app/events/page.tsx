@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { TicketEventCard } from "../../components/TicketEventCard";
 import { ApiError, api, type AuthResponse, type User } from "../../lib/api";
 
 type CampusEvent = {
@@ -53,18 +54,6 @@ const emptyDraft: Draft = {
 function failureMessage(err: unknown): string {
   if (err instanceof ApiError) return err.message;
   return "The campus server didn't answer.";
-}
-
-function formatWhen(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
 }
 
 function toLocalInput(value: string): string {
@@ -386,7 +375,7 @@ export default function EventsPage() {
           <ul className="mt-10 grid gap-4">
             {events.length === 0 ? <li className="text-base text-muted">Nothing published yet.</li> : null}
             {events.map((event) => (
-              <li key={event.id} className="rounded-card border border-line bg-surface p-6">
+              <li key={event.id} className={editingId === event.id ? "rounded-lg border border-line bg-surface p-6" : undefined}>
                 {editingId === event.id ? (
                   <div className="grid gap-4">
                     <input
@@ -433,61 +422,49 @@ export default function EventsPage() {
                     </div>
                   </div>
                 ) : (
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <h2 className="font-display text-2xl text-fg">{event.title}</h2>
-                      <p className="mt-1 text-sm text-muted">
-                        {event.venue} · {formatWhen(event.event_date)}
-                      </p>
-                      {event.venue_url ? (
-                        <a href={event.venue_url} target="_blank" rel="noreferrer" className="text-xs text-accent underline mt-1 block">
-                          View venue map & directions ↗
-                        </a>
-                      ) : null}
-                      {event.description ? (
-                        <p className="mt-3 max-w-xl text-base leading-normal text-muted">{event.description}</p>
-                      ) : null}
-                      <p className="mt-2 text-sm text-muted">Posted by {event.organizer_name} (Max {event.max_tickets_per_user} tickets/student)</p>
-                    </div>
-                    {event.can_manage ? (
-                      <div className="flex shrink-0 flex-wrap gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingId(event.id);
-                            setConfirmDeleteId("");
-                            setEditDraft({
-                              title: event.title,
-                              venue: event.venue,
-                              venue_url: event.venue_url ?? "",
-                              image_url: event.image_url ?? "",
-                              capacity: String(event.capacity ?? 200),
-                              max_tickets_per_user: String(event.max_tickets_per_user ?? 5),
-                              description: event.description ?? "",
-                              event_date: toLocalInput(event.event_date),
-                            });
-                          }}
-                          className="h-11 rounded-full border border-line px-5 text-fg"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          disabled={pending === event.id}
-                          onClick={() => {
-                            if (confirmDeleteId === event.id) {
-                              void remove(event.id);
-                              return;
-                            }
-                            setConfirmDeleteId(event.id);
-                          }}
-                          className="h-11 rounded-full border border-line px-5 text-fg disabled:opacity-60"
-                        >
-                          {confirmDeleteId === event.id ? "Confirm delete" : "Delete"}
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
+                  <TicketEventCard
+                    event={event}
+                    actions={
+                      event.can_manage ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingId(event.id);
+                              setConfirmDeleteId("");
+                              setEditDraft({
+                                title: event.title,
+                                venue: event.venue,
+                                venue_url: event.venue_url ?? "",
+                                image_url: event.image_url ?? "",
+                                capacity: String(event.capacity ?? 200),
+                                max_tickets_per_user: String(event.max_tickets_per_user ?? 5),
+                                description: event.description ?? "",
+                                event_date: toLocalInput(event.event_date),
+                              });
+                            }}
+                            className="h-11 rounded-md border border-fg bg-surface px-5 text-sm text-fg shadow-[3px_3px_0px_#111111] active:translate-x-px active:translate-y-px active:shadow-none"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            disabled={pending === event.id}
+                            onClick={() => {
+                              if (confirmDeleteId === event.id) {
+                                void remove(event.id);
+                                return;
+                              }
+                              setConfirmDeleteId(event.id);
+                            }}
+                            className="h-11 rounded-md border border-line bg-surface px-5 text-sm text-fg disabled:opacity-60"
+                          >
+                            {confirmDeleteId === event.id ? "Confirm delete" : "Delete"}
+                          </button>
+                        </>
+                      ) : null
+                    }
+                  />
                 )}
               </li>
             ))}
