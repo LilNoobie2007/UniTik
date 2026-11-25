@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { JetBrains_Mono, Plus_Jakarta_Sans, Space_Grotesk } from "next/font/google";
 import { Navbar } from "../components/Navbar";
+import { AuthProvider } from "../lib/auth-context";
 import "./globals.css";
 
 const plusJakarta = Plus_Jakarta_Sans({
@@ -38,8 +39,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     >
       <body className="min-h-dvh bg-bg font-sans text-fg antialiased">
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
-        <Navbar />
-        <main>{children}</main>
+        <AuthProvider>
+          <Navbar />
+          <main>{children}</main>
+        </AuthProvider>
       </body>
     </html>
   );

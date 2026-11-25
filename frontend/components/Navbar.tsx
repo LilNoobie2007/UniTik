@@ -2,9 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
 import { Moon, Sun, Ticket } from "lucide-react";
-import { api, type AuthResponse, type Role } from "../lib/api";
+import { useAuth } from "../lib/auth-context";
 
 const THEME_KEY = "unitik-theme";
 
@@ -23,29 +22,18 @@ function isActive(pathname: string, href: string) {
 
 export function Navbar() {
   const pathname = usePathname();
-  const [session, setSession] = useState<{ name: string; role: Role } | null>(null);
+  const { user, status } = useAuth();
 
-  useEffect(() => {
-    let cancelled = false;
-    api<AuthResponse>("/me.php")
-      .then((data) => {
-        if (!cancelled) setSession({ name: data.user.full_name, role: data.user.role });
-      })
-      .catch(() => {
-        if (!cancelled) setSession(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [pathname]);
-
-  const deskHref = session?.role === "student" ? "/wallet" : "/events";
-  const deskLabel = session?.role === "student" ? "Wallet" : "Events";
+  const deskHref = user?.role === "student" ? "/wallet" : "/events";
+  const deskLabel = user?.role === "student" ? "Wallet" : "Events";
 
   const links: { href: string; label: string }[] = [];
-  if (session?.role === "student") links.push({ href: "/apply", label: "Apply" });
-  if (session?.role === "admin") links.push({ href: "/admin", label: "Requests" });
-  if (session !== null) links.push({ href: deskHref, label: deskLabel });
+  if (user?.role === "student") links.push({ href: "/apply", label: "Apply" });
+  if (user?.role === "admin") links.push({ href: "/admin", label: "Admin" });
+  if (user?.role === "organizer" || user?.role === "admin") {
+    links.push({ href: "/scan", label: "Scan" });
+  }
+  if (user !== null) links.push({ href: deskHref, label: deskLabel });
 
   return (
     <header className="sticky top-0 z-40 border-b border-line bg-bg">
@@ -79,7 +67,8 @@ export function Navbar() {
               </Link>
             );
           })}
-          {session !== null ? (
+
+          {user !== null ? (
             <Link
               href="/dashboard"
               aria-current={isActive(pathname, "/dashboard") ? "page" : undefined}
@@ -89,17 +78,25 @@ export function Navbar() {
                   : "border-line bg-surface text-fg"
               }`}
             >
-              {session.name}
+              {user.full_name}
             </Link>
+          ) : status === "loading" ? (
+            <span
+              aria-hidden="true"
+              className="inline-flex h-11 w-20 items-center justify-center rounded-md border border-line bg-surface font-mono text-[11px] uppercase tracking-widest text-muted"
+            >
+              …
+            </span>
           ) : (
             <Link
               href="/login"
               aria-current={isActive(pathname, "/login") ? "page" : undefined}
-              className="inline-flex h-11 items-center rounded-md border border-fg bg-accent px-4 text-sm text-accent-fg shadow-[3px_3px_0px_#111111] active:translate-x-px active:translate-y-px active:shadow-none"
+              className="inline-flex h-11 items-center rounded-md border border-fg bg-accent px-4 text-sm text-accent-fg shadow-[3px_3px_0px_var(--fg)] active:translate-x-px active:translate-y-px active:shadow-none"
             >
               Sign in
             </Link>
           )}
+
           <button
             type="button"
             onClick={toggleTheme}
