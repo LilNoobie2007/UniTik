@@ -1,9 +1,9 @@
 # 🎟️ UniTik — Campus Event & Ticketing Management System
 
-![Version](https://shields.io)
-![PHP](https://shields.io)
-![Next.js](https://shields.io)
-![PostgreSQL](https://shields.io)
+![Version](docs/badges/version.svg)
+![PHP](docs/badges/php.svg)
+![Next.js](docs/badges/nextjs.svg)
+![PostgreSQL](docs/badges/postgres.svg)
 
 **Discover. Book. Validate.**
 
@@ -13,28 +13,28 @@ UniTik is a zero-trust campus ticketing platform built to handle student event d
 
 ## 📋 Project Milestones
 
-| Milestone No. | What It Does | Status |
+| Milestone | What It Does | Status |
 | :--- | :--- | :---: |
-| **Milestone 1** | Zero-trust split-table authentication (`students` vs. `organizers`), `HttpOnly` session cookies, CORS whitelist, and login/signup flows | ✔️ |
-| **Milestone 2** | Relational event publishing and discovery feed with `venues` resolution, ownership checks (`can_manage`), and event CRUD | ✔️ |
-| **Milestone 3** | Student ticket wallet with QR pass generation, white quiet-zone framing, and fullscreen Gate View modal | ✔️ |
-| **Milestone 4** | Student-to-organizer elevation pipeline with ID card upload, pending queue, and super-admin approval/rejection | ✔️ |
-| **Milestone 5** | Editorial Ticket Stub UI system across all routes and deduplicated in-memory `AuthProvider` session state | ✔️ |
-| **Milestone 6** | Super-admin user directory with role filters, search, and live organizer-to-admin privilege toggling | ✔️ |
-| **Milestone 7** | Dedicated camera and manual `/scan` gate scanner with atomic `scan_status` claims and `gate_scan_logs` audit trail | ✔️ |
-| **Milestone 8** | 3NF multi-tier ticketing (`ticket_tiers`) and PDO row-locked (`SELECT ... FOR UPDATE`) concurrency-safe seat booking | ✔️ |
-| **Milestone 9** | HMAC-SHA256 cryptographic QR token signing and tamper-proof signature verification in `backend/tickets/scan.php` | ❌ |
-| **Milestone 10** | Automated transactional email pass delivery and booking receipts via PHPMailer SMTP (`vendor/`) | ❌ |
-| **Milestone 11** | Python Engine microservice (`microservices/`) for compositing high-resolution downloadable/printable branded QR ticket passes | ❌ |
-| **Milestone 12** | GoLang Radar microservice (`microservices/`) for real-time gate scan telemetry, live entry rates, and concurrency load monitoring | ❌ |
-| **Milestone 13** | Brute-force login lockout (`failed_login_attempts`), CSRF token enforcement, and IP/session rate limiting on auth and booking routes | ❌ |
-| **Milestone 14** | Campus email OTP and `roll_number` verification (`is_verified`) plus self-service password reset (`last_password_change_at`) | ❌ |
-| **Milestone 15** | Student ticket cancellation, atomic seat release back to `ticket_tiers`, and automated FIFO waitlist promotion | ❌ |
-| **Milestone 16** | Event discovery search bar, `category_tags` filtering, date sorting, and debounced `page_views` analytics tracking | ❌ |
-| **Milestone 17** | Organizer live event analytics dashboard with tier revenue, check-in conversion rates, and CSV/PDF attendee roster export | ❌ |
-| **Milestone 18** | Booking device fingerprinting (`booking_device`), `fraud_risk_score` heuristics, and suspicious activity flags on `/admin` | ❌ |
-| **Milestone 19** | Offline-capable gate scanner queue with IndexedDB sync for spotty campus Wi-Fi plus audio/haptic scan feedback | ❌ |
-| **Milestone 20** | Production deployment hardening (Vercel frontend, production PHP-FPM/Nginx BFF, Supabase connection pooling, and automated API/E2E test suite) | ❌ |
+| **Milestone&nbsp;01** | Zero-trust split-table authentication (`students` vs. `organizers`), `HttpOnly` session cookies, CORS whitelist, and login/signup flows | ✔️ |
+| **Milestone&nbsp;02** | Relational event publishing and discovery feed with `venues` resolution, ownership checks (`can_manage`), and event CRUD | ✔️ |
+| **Milestone&nbsp;03** | Student ticket wallet with QR pass generation, white quiet-zone framing, and fullscreen Gate View modal | ✔️ |
+| **Milestone&nbsp;04** | Student-to-organizer elevation pipeline with ID card upload, pending queue, and super-admin approval/rejection | ✔️ |
+| **Milestone&nbsp;05** | Editorial Ticket Stub UI system across all routes and deduplicated in-memory `AuthProvider` session state | ✔️ |
+| **Milestone&nbsp;06** | Super-admin user directory with role filters, search, and live organizer-to-admin privilege toggling | ✔️ |
+| **Milestone&nbsp;07** | Dedicated camera and manual `/scan` gate scanner with atomic `scan_status` claims and `gate_scan_logs` audit trail | ✔️ |
+| **Milestone&nbsp;08** | 3NF multi-tier ticketing (`ticket_tiers`) and PDO row-locked (`SELECT ... FOR UPDATE`) concurrency-safe seat booking | ✔️ |
+| **Milestone&nbsp;09** | HMAC-SHA256 cryptographic QR token signing and tamper-proof signature verification in `backend/tickets/scan.php` | ❌ |
+| **Milestone&nbsp;10** | Automated transactional email pass delivery and booking receipts via PHPMailer SMTP (`vendor/`) | ❌ |
+| **Milestone&nbsp;11** | Python Engine microservice (`microservices/`) for compositing high-resolution downloadable/printable branded QR ticket passes | ❌ |
+| **Milestone&nbsp;12** | GoLang Radar microservice (`microservices/`) for real-time gate scan telemetry, live entry rates, and concurrency load monitoring | ❌ |
+| **Milestone&nbsp;13** | Brute-force login lockout (`failed_login_attempts`), CSRF token enforcement, and IP/session rate limiting on auth and booking routes | ❌ |
+| **Milestone&nbsp;14** | Campus email OTP and `roll_number` verification (`is_verified`) plus self-service password reset (`last_password_change_at`) | ❌ |
+| **Milestone&nbsp;15** | Student ticket cancellation, atomic seat release back to `ticket_tiers`, and automated FIFO waitlist promotion | ❌ |
+| **Milestone&nbsp;16** | Event discovery search bar, `category_tags` filtering, date sorting, and debounced `page_views` analytics tracking | ❌ |
+| **Milestone&nbsp;17** | Organizer live event analytics dashboard with tier revenue, check-in conversion rates, and CSV/PDF attendee roster export | ❌ |
+| **Milestone&nbsp;18** | Booking device fingerprinting (`booking_device`), `fraud_risk_score` heuristics, and suspicious activity flags on `/admin` | ❌ |
+| **Milestone&nbsp;19** | Offline-capable gate scanner queue with IndexedDB sync for spotty campus Wi-Fi plus audio/haptic scan feedback | ❌ |
+| **Milestone&nbsp;20** | Production deployment hardening (Vercel frontend, production PHP-FPM/Nginx BFF, Supabase connection pooling, and automated API/E2E test suite) | ❌ |
 
 ---
 
@@ -61,6 +61,7 @@ UniTik/
 │   └── uploads/        # Local storage for uploaded organizer ID cards
 ├── docs/
 │   ├── diagrams/       # UML, ERD, and System Architecture Diagrams
+│   └── schema.sql      # Master 3NF PostgreSQL / Supabase DDL schema
 ├── frontend/
 │   ├── app/            # Next.js App Router (Editorial Ticket Stub UI)
 │   │   ├── admin/      # Super-admin approval queue and user directory
