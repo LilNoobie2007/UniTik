@@ -12,7 +12,8 @@ import {
   Ticket,
   Upload,
 } from "lucide-react";
-import { ApiError, api, type AuthResponse, type User } from "../../lib/api";
+import { ApiError, api } from "../../lib/api";
+import { useAuth } from "../../lib/auth-context";
 
 function failureMessage(err: unknown): string {
   if (err instanceof ApiError) return err.message;
@@ -27,47 +28,26 @@ function formatFileSize(bytes: number): string {
 }
 
 export default function ApplyPage() {
-  const [user, setUser] = useState<User | null>(null);
-  const [status, setStatus] = useState<"loading" | "ready" | "signed-out" | "error" | "sent">(
-    "loading"
-  );
+  const { user, status: authStatus, error: authError } = useAuth();
+  const [submitted, setSubmitted] = useState(false);
   const [details, setDetails] = useState("");
   const [file, setFile] = useState<File | null>(null);
-  const [error, setError] = useState("");
+  const [formError, setFormError] = useState("");
   const [pending, setPending] = useState(false);
 
   useEffect(() => {
     document.title = "Apply · UniTik";
-    let cancelled = false;
-    api<AuthResponse>("/me.php")
-      .then((data) => {
-        if (cancelled) return;
-        setUser(data.user);
-        setStatus("ready");
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        if (err instanceof ApiError && err.status === 401) {
-          setStatus("signed-out");
-          return;
-        }
-        setError(failureMessage(err));
-        setStatus("error");
-      });
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setError("");
+    setFormError("");
     if (details.trim() === "") {
-      setError("Tell us which committee or company you represent.");
+      setFormError("Tell us which committee or company you represent.");
       return;
     }
     if (file === null) {
-      setError("Upload a photo or PDF of your ID card.");
+      setFormError("Upload a photo or PDF of your ID card.");
       return;
     }
     const body = new FormData();
@@ -76,16 +56,15 @@ export default function ApplyPage() {
     setPending(true);
     try {
       await api("/applications/apply.php", { method: "POST", body });
-      setStatus("sent");
+      setSubmitted(true);
     } catch (err) {
-      setError(failureMessage(err));
+      setFormError(failureMessage(err));
       setPending(false);
     }
   }
 
   return (
     <section className="mx-auto grid max-w-6xl items-start gap-12 px-5 py-14 md:grid-cols-12 md:py-24">
-      {/* Left Editorial Column */}
       <div className="md:col-span-5">
         <p className="inline-flex items-center gap-2 font-mono text-xs uppercase tracking-[0.2em] text-muted">
           <Ticket className="h-3.5 w-3.5 text-accent" strokeWidth={1.75} />
@@ -117,9 +96,8 @@ export default function ApplyPage() {
         </dl>
       </div>
 
-      {/* Right State / Print-Form Card */}
       <div className="md:col-span-7">
-        {status === "loading" ? (
+        {authStatus === "loading" ? (
           <div className="border border-line bg-surface p-8 rounded-card">
             <p className="font-mono text-xs uppercase tracking-[0.18em] text-muted">
               Checking this browser…
@@ -127,7 +105,7 @@ export default function ApplyPage() {
           </div>
         ) : null}
 
-        {status === "signed-out" ? (
+        {authStatus === "signed-out" ? (
           <div className="border border-fg bg-surface p-8 rounded-card shadow-[4px_4px_0px_var(--fg)]">
             <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted">
               Session Required
@@ -148,19 +126,19 @@ export default function ApplyPage() {
           </div>
         ) : null}
 
-        {status === "error" ? (
+        {authStatus === "error" ? (
           <div className="border border-accent bg-surface p-8 rounded-card">
             <div className="flex items-center gap-2 font-mono text-xs font-semibold uppercase tracking-wider text-accent">
               <ShieldAlert className="h-4 w-4" strokeWidth={1.75} />
               Connection Error
             </div>
             <p role="alert" className="mt-3 text-sm text-muted">
-              {error}
+              {authError}
             </p>
           </div>
         ) : null}
 
-        {status === "ready" && user !== null && user.role !== "student" ? (
+        {authStatus === "authenticated" && user !== null && user.role !== "student" ? (
           <div className="border border-fg bg-surface p-8 rounded-card shadow-[4px_4px_0px_var(--fg)]">
             <span className="inline-flex items-center gap-1.5 border border-stamp px-2.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-stamp">
               <CheckCircle2 className="h-3.5 w-3.5" strokeWidth={1.75} />
@@ -182,7 +160,7 @@ export default function ApplyPage() {
           </div>
         ) : null}
 
-        {status === "sent" ? (
+        {submitted ? (
           <div className="border border-fg bg-surface rounded-card shadow-[4px_4px_0px_var(--fg)]">
             <div className="flex items-center justify-between bg-fg px-6 py-3.5 text-bg">
               <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.2em]">
@@ -212,13 +190,12 @@ export default function ApplyPage() {
           </div>
         ) : null}
 
-        {status === "ready" && user?.role === "student" ? (
+        {!submitted && authStatus === "authenticated" && user?.role === "student" ? (
           <form
             onSubmit={onSubmit}
             className="border border-fg bg-surface rounded-card shadow-[4px_4px_0px_var(--fg)]"
             noValidate
           >
-            {/* Form Header Bar */}
             <div className="flex items-center justify-between border-b border-line px-6 py-4">
               <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-fg">
                 Organizer Credentials
@@ -264,7 +241,7 @@ export default function ApplyPage() {
                   htmlFor="id-card"
                   className="mt-2 flex cursor-pointer flex-col items-start justify-between gap-3 rounded-card border border-dashed border-fg bg-bg p-4 transition-colors hover:bg-surface sm:flex-row sm:items-center focus-within:outline-2 focus-within:outline-accent"
                 >
-                  <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex min-w-0 items-center gap-3">
                     <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-card border border-fg bg-surface text-fg">
                       <Upload className="h-4 w-4" strokeWidth={1.75} />
                     </span>
@@ -296,7 +273,7 @@ export default function ApplyPage() {
                 </label>
               </div>
 
-              {error !== "" ? (
+              {formError !== "" ? (
                 <div
                   role="alert"
                   className="mt-5 flex items-start gap-2.5 rounded-card border border-accent bg-bg px-3.5 py-3 text-sm text-fg"
@@ -305,7 +282,7 @@ export default function ApplyPage() {
                     className="mt-0.5 h-4 w-4 shrink-0 text-accent"
                     strokeWidth={1.75}
                   />
-                  <span>{error}</span>
+                  <span>{formError}</span>
                 </div>
               ) : null}
 

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ArrowUpRight, Lock, Mail, ShieldAlert, Ticket, UserRound } from "lucide-react";
 import { ApiError, api, type AuthResponse } from "../../lib/api";
+import { useAuth } from "../../lib/auth-context";
 
 function failureMessage(err: unknown): string {
   if (err instanceof ApiError) return err.message;
@@ -13,6 +14,7 @@ function failureMessage(err: unknown): string {
 
 export default function SignupPage() {
   const router = useRouter();
+  const { status: authStatus, refresh } = useAuth();
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -22,6 +24,12 @@ export default function SignupPage() {
   useEffect(() => {
     document.title = "Create a pass · UniTik";
   }, []);
+
+  useEffect(() => {
+    if (authStatus === "authenticated") {
+      router.replace("/dashboard");
+    }
+  }, [authStatus, router]);
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -51,6 +59,7 @@ export default function SignupPage() {
           password,
         }),
       });
+      await refresh();
       router.push("/dashboard");
     } catch (err) {
       setError(failureMessage(err));
@@ -60,7 +69,6 @@ export default function SignupPage() {
 
   return (
     <section className="mx-auto grid max-w-6xl items-center gap-12 px-5 py-14 md:grid-cols-12 md:py-24">
-      {/* Left Editorial Column */}
       <div className="md:col-span-6">
         <p className="inline-flex items-center gap-2 font-mono text-xs uppercase tracking-[0.2em] text-muted">
           <Ticket className="h-3.5 w-3.5 text-accent" strokeWidth={1.75} />
@@ -92,14 +100,12 @@ export default function SignupPage() {
         </dl>
       </div>
 
-      {/* Right Print-Form Card */}
       <div className="md:col-span-6">
         <form
           onSubmit={onSubmit}
           className="border border-fg bg-surface rounded-card shadow-[4px_4px_0px_var(--fg)]"
           noValidate
         >
-          {/* Card Header Bar */}
           <div className="flex items-center justify-between border-b border-line px-6 py-4">
             <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-fg">
               Student Registration
@@ -203,7 +209,7 @@ export default function SignupPage() {
               {!pending ? <ArrowUpRight className="h-4 w-4" strokeWidth={1.75} /> : null}
             </button>
 
-            <div className="mt-6 border-t border-dashed border-line pt-5 flex items-center justify-between gap-4 text-sm text-muted">
+            <div className="mt-6 flex items-center justify-between gap-4 border-t border-dashed border-line pt-5 text-sm text-muted">
               <span>Already registered?</span>
               <Link
                 href="/login"

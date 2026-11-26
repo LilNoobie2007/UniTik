@@ -8,17 +8,19 @@ import {
   Calendar,
   LogOut,
   Mail,
+  ScanLine,
   ShieldAlert,
   ShieldCheck,
   Ticket,
   UserCheck,
 } from "lucide-react";
-import { ApiError, api, type AuthResponse, type User } from "../../lib/api";
+import { ApiError, api, type User } from "../../lib/api";
+import { useAuth } from "../../lib/auth-context";
 
 const ROLE_LABEL: Record<User["role"], string> = {
   student: "Student",
   organizer: "Event planner",
-  admin: "Event planner",
+  admin: "Super-admin",
 };
 
 function formatJoined(value: string): string {
@@ -33,44 +35,23 @@ function formatJoined(value: string): string {
 
 export default function DashboardPage() {
   const router = useRouter();
-  const [user, setUser] = useState<User | null>(null);
-  const [status, setStatus] = useState<"loading" | "ready" | "signed-out" | "error">("loading");
-  const [error, setError] = useState("");
+  const { user, status: authStatus, error: authError, clearSession } = useAuth();
+  const [signOutError, setSignOutError] = useState("");
   const [leaving, setLeaving] = useState(false);
 
   useEffect(() => {
     document.title = "Your pass · UniTik";
-    let cancelled = false;
-
-    api<AuthResponse>("/me.php")
-      .then((data) => {
-        if (cancelled) return;
-        setUser(data.user);
-        setStatus("ready");
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        if (err instanceof ApiError && err.status === 401) {
-          setStatus("signed-out");
-          return;
-        }
-        setError(err instanceof ApiError ? err.message : "The campus server didn't answer.");
-        setStatus("error");
-      });
-
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
   async function signOut() {
     setLeaving(true);
-    setError("");
+    setSignOutError("");
     try {
       await api<{ ok: true }>("/logout.php", { method: "POST" });
+      clearSession();
       router.push("/login");
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "The campus server didn't answer.");
+      setSignOutError(err instanceof ApiError ? err.message : "The campus server didn't answer.");
       setLeaving(false);
     }
   }
@@ -82,7 +63,7 @@ export default function DashboardPage() {
         Your Pass · Account Desk
       </p>
 
-      {status === "loading" ? (
+      {authStatus === "loading" ? (
         <div className="mt-6 border-t border-line pt-8">
           <h1 className="font-display text-4xl font-bold tracking-tight text-fg md:text-5xl">
             Checking this browser…
@@ -93,7 +74,7 @@ export default function DashboardPage() {
         </div>
       ) : null}
 
-      {status === "signed-out" ? (
+      {authStatus === "signed-out" ? (
         <div className="mt-6 max-w-xl border border-fg bg-surface p-8 rounded-card shadow-[4px_4px_0px_var(--fg)]">
           <h1 className="font-display text-4xl font-bold leading-tight tracking-tight text-fg">
             This browser isn&apos;t signed in.
@@ -111,7 +92,7 @@ export default function DashboardPage() {
         </div>
       ) : null}
 
-      {status === "error" ? (
+      {authStatus === "error" ? (
         <div className="mt-6 max-w-xl border border-accent bg-surface p-8 rounded-card">
           <div className="flex items-center gap-2 font-mono text-xs font-semibold uppercase tracking-wider text-accent">
             <ShieldAlert className="h-4 w-4" strokeWidth={1.75} />
@@ -121,14 +102,13 @@ export default function DashboardPage() {
             The pass didn&apos;t load.
           </h1>
           <p role="alert" className="mt-3 text-sm leading-relaxed text-muted">
-            {error}
+            {authError}
           </p>
         </div>
       ) : null}
 
-      {status === "ready" && user !== null ? (
+      {authStatus === "authenticated" && user !== null ? (
         <div className="mt-5 space-y-10">
-          {/* Top Editorial Header + Status Strip */}
           <div className="flex flex-col gap-6 border-b border-line pb-8 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <h1 className="font-display text-4xl font-bold leading-none tracking-tight text-fg md:text-5xl">
@@ -162,7 +142,6 @@ export default function DashboardPage() {
           </div>
 
           <div className="grid items-start gap-8 lg:grid-cols-12">
-            {/* Left Quick Action Desk */}
             <div className="space-y-4 lg:col-span-6">
               <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">
                 Available Desks
@@ -183,6 +162,24 @@ export default function DashboardPage() {
                   </div>
                   <ArrowUpRight className="h-5 w-5 shrink-0" strokeWidth={1.75} />
                 </Link>
+
+                {user.role === "organizer" || user.role === "admin" ? (
+                  <Link
+                    href="/scan"
+                    className="group flex items-center justify-between gap-4 border border-fg bg-surface p-5 rounded-card text-fg shadow-[3px_3px_0px_var(--fg)] transition-colors hover:bg-fg hover:text-bg"
+                  >
+                    <div>
+                      <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted group-hover:text-bg/70">
+                        Gate Operations
+                      </p>
+                      <p className="mt-1 inline-flex items-center gap-2 font-display text-xl font-bold tracking-tight">
+                        <ScanLine className="h-5 w-5 text-accent" strokeWidth={1.75} />
+                        Open door scanner
+                      </p>
+                    </div>
+                    <ArrowUpRight className="h-5 w-5 shrink-0" strokeWidth={1.75} />
+                  </Link>
+                ) : null}
 
                 {user.role === "student" ? (
                   <Link
@@ -220,9 +217,7 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Right Perforated Campus Pass Card */}
             <article className="border border-fg bg-surface rounded-card shadow-[4px_4px_0px_var(--fg)] lg:col-span-6">
-              {/* Ink Header Band */}
               <div className="flex items-center justify-between bg-fg px-6 py-3.5 text-bg">
                 <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.2em]">
                   Campus Pass
@@ -255,7 +250,6 @@ export default function DashboardPage() {
                 </div>
               </dl>
 
-              {/* Perforated Tear Line with Side Notches */}
               <div className="relative flex items-center">
                 <span
                   aria-hidden="true"
@@ -269,7 +263,7 @@ export default function DashboardPage() {
               </div>
 
               <div className="p-6">
-                {error !== "" ? (
+                {signOutError !== "" ? (
                   <div
                     role="alert"
                     className="mb-4 flex items-start gap-2.5 rounded-card border border-accent bg-bg px-3.5 py-2.5 text-sm text-fg"
@@ -278,7 +272,7 @@ export default function DashboardPage() {
                       className="mt-0.5 h-4 w-4 shrink-0 text-accent"
                       strokeWidth={1.75}
                     />
-                    <span>{error}</span>
+                    <span>{signOutError}</span>
                   </div>
                 ) : null}
 
