@@ -13,7 +13,12 @@ import {
   Ticket,
   X,
 } from "lucide-react";
-import { ApiError, api, type AuthResponse, type User } from "../../lib/api";
+import {
+  formatTierPrice,
+  type TicketTier,
+} from "../../components/TicketEventCard";
+import { ApiError, api } from "../../lib/api";
+import { useAuth } from "../../lib/auth-context";
 
 type CampusEvent = {
   id: string;
@@ -23,9 +28,13 @@ type CampusEvent = {
   venue: string;
   venue_url?: string | null;
   image_url?: string | null;
+  capacity?: number;
+  sold_count?: number;
+  remaining_seats?: number;
   max_tickets_per_user?: number;
   organizer_name: string;
   can_manage: boolean;
+  tiers?: TicketTier[];
 };
 
 type Pass = {
@@ -36,6 +45,23 @@ type Pass = {
   venue: string;
   ticket_code: string;
   is_scanned: boolean;
+  tier_id?: string | null;
+  tier_name?: string;
+  tier_price?: string;
+  issued_at?: string | null;
+};
+
+type BookResponse = {
+  ok: true;
+  ticket: Pass;
+  tier?: {
+    id: string;
+    name: string;
+    price: string;
+    capacity: number;
+    sold: number;
+    remaining: number;
+  };
 };
 
 function failureMessage(err: unknown): string {
@@ -67,62 +93,107 @@ function getDateSpine(value: string): { month: string; day: string; time: string
   };
 }
 
+function defaultTierId(event: CampusEvent): string {
+  const tiers = event.tiers ?? [];
+  const available = tiers.find((t) => t.remaining > 0);
+  return available?.id ?? tiers[0]?.id ?? "";
+}
+
 export default function WalletPage() {
-  const [user, setUser] = useState<User | null>(null);
+  const { user, status: authStatus, error: authError } = useAuth();
   const [events, setEvents] = useState<CampusEvent[]>([]);
   const [tickets, setTickets] = useState<Pass[]>([]);
-  const [status, setStatus] = useState<"loading" | "ready" | "signed-out" | "error">("loading");
-  const [error, setError] = useState("");
+  const [selectedTiers, setSelectedTiers] = useState<Record<string, string>>({});
+  const [dataLoading, setDataLoading] = useState(false);
+  const [pageError, setPageError] = useState("");
   const [bookingId, setBookingId] = useState("");
   const [activePass, setActivePass] = useState<Pass | null>(null);
 
   useEffect(() => {
     document.title = "Wallet · UniTik";
-    let cancelled = false;
+  }, []);
 
-    api<AuthResponse>("/me.php")
-      .then(async (me) => {
-        if (cancelled) return;
-        setUser(me.user);
-        if (me.user.role !== "student") {
-          setStatus("ready");
-          return;
-        }
-        const [eventRes, ticketRes] = await Promise.all([
-          api<{ ok: true; events: CampusEvent[] }>("/events/list.php"),
-          api<{ ok: true; tickets: Pass[] }>("/tickets/mine.php"),
-        ]);
+  useEffect(() => {
+    if (authStatus !== "authenticated" || user?.role !== "student") return;
+
+    let cancelled = false;
+    setDataLoading(true);
+    setPageError("");
+
+    Promise.all([
+      api<{ ok: true; events: CampusEvent[] }>("/events/list.php"),
+      api<{ ok: true; tickets: Pass[] }>("/tickets/mine.php"),
+    ])
+      .then(([eventRes, ticketRes]) => {
         if (cancelled) return;
         setEvents(eventRes.events);
         setTickets(ticketRes.tickets);
-        setStatus("ready");
+        setSelectedTiers((prev) => {
+          const next: Record<string, string> = { ...prev };
+          for (const ev of eventRes.events) {
+            if (!next[ev.id]) {
+              next[ev.id] = defaultTierId(ev);
+            }
+          }
+          return next;
+        });
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        if (err instanceof ApiError && err.status === 401) {
-          setStatus("signed-out");
-          return;
-        }
-        setError(failureMessage(err));
-        setStatus("error");
+        setPageError(failureMessage(err));
+      })
+      .finally(() => {
+        if (!cancelled) setDataLoading(false);
       });
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [authStatus, user?.role]);
 
-  async function book(eventId: string) {
+  async function book(eventId: string, tierId: string) {
     setBookingId(eventId);
-    setError("");
+    setPageError("");
     try {
-      const data = await api<{ ok: true; ticket: Pass }>("/tickets/book.php", {
+      const data = await api<BookResponse>("/tickets/book.php", {
         method: "POST",
-        body: JSON.stringify({ event_id: eventId }),
+        body: JSON.stringify({
+          event_id: eventId,
+          ...(tierId !== "" ? { tier_id: tierId } : {}),
+        }),
       });
-      setTickets((current) => [...current, data.ticket]);
+      setTickets((current) => [data.ticket, ...current]);
+
+      if (data.tier) {
+        const updatedTier = data.tier;
+        setEvents((current) =>
+          current.map((ev) => {
+            if (ev.id !== eventId) return ev;
+            const nextTiers = (ev.tiers ?? []).map((t) =>
+              t.id === updatedTier.id
+                ? { ...t, sold: updatedTier.sold, remaining: updatedTier.remaining }
+                : t
+            );
+            const totalCap = nextTiers.reduce((sum, t) => sum + t.capacity, 0);
+            const totalSold = nextTiers.reduce((sum, t) => sum + t.sold, 0);
+            return {
+              ...ev,
+              tiers: nextTiers,
+              capacity: totalCap || ev.capacity,
+              sold_count: totalSold,
+              remaining_seats: Math.max(0, totalCap - totalSold),
+            };
+          })
+        );
+      }
     } catch (err) {
-      setError(failureMessage(err));
+      setPageError(failureMessage(err));
+      // Refresh live seat availability if another student just took the last seat
+      if (err instanceof ApiError && err.status === 409) {
+        api<{ ok: true; events: CampusEvent[] }>("/events/list.php")
+          .then((res) => setEvents(res.events))
+          .catch(() => {});
+      }
     } finally {
       setBookingId("");
     }
@@ -135,14 +206,15 @@ export default function WalletPage() {
 
   const validCount = tickets.filter((t) => !t.is_scanned).length;
   const scannedCount = tickets.length - validCount;
+  const isLoading =
+    authStatus === "loading" ||
+    (authStatus === "authenticated" && user?.role === "student" && dataLoading);
 
   return (
     <section className="mx-auto max-w-6xl px-5 py-12 md:py-20">
-      <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted">
-        Student Wallet
-      </p>
+      <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted">Student Wallet</p>
 
-      {status === "loading" ? (
+      {isLoading ? (
         <div className="mt-6 border-t border-line pt-8">
           <h1 className="font-display text-4xl font-bold tracking-tight text-fg md:text-5xl">
             Checking this browser…
@@ -153,7 +225,7 @@ export default function WalletPage() {
         </div>
       ) : null}
 
-      {status === "signed-out" ? (
+      {authStatus === "signed-out" ? (
         <div className="mt-6 max-w-xl border border-fg bg-surface p-8 rounded-card shadow-[4px_4px_0px_var(--fg)]">
           <h1 className="font-display text-4xl font-bold leading-tight tracking-tight text-fg">
             Sign in to hold a ticket.
@@ -171,7 +243,7 @@ export default function WalletPage() {
         </div>
       ) : null}
 
-      {status === "error" ? (
+      {authStatus === "error" ? (
         <div className="mt-6 max-w-xl border border-accent bg-surface p-8 rounded-card">
           <div className="flex items-center gap-2 font-mono text-xs font-semibold uppercase tracking-wider text-accent">
             <ShieldAlert className="h-4 w-4" strokeWidth={1.75} />
@@ -181,12 +253,12 @@ export default function WalletPage() {
             The wallet didn&apos;t load.
           </h1>
           <p role="alert" className="mt-3 text-sm leading-relaxed text-muted">
-            {error}
+            {authError}
           </p>
         </div>
       ) : null}
 
-      {status === "ready" && user !== null && user.role !== "student" ? (
+      {authStatus === "authenticated" && user !== null && user.role !== "student" ? (
         <div className="mt-6 max-w-xl border border-fg bg-surface p-8 rounded-card shadow-[4px_4px_0px_var(--fg)]">
           <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted">
             Role · {user.role}
@@ -195,7 +267,8 @@ export default function WalletPage() {
             Planners don&apos;t book from here.
           </h1>
           <p className="mt-4 text-base leading-relaxed text-muted">
-            Event planners publish, edit, and scan passes. Student accounts are the ones that hold tickets.
+            Event planners publish, edit, and scan passes. Student accounts are the ones that hold
+            tickets.
           </p>
           <Link
             href="/events"
@@ -207,7 +280,7 @@ export default function WalletPage() {
         </div>
       ) : null}
 
-      {status === "ready" && user?.role === "student" ? (
+      {!isLoading && authStatus === "authenticated" && user?.role === "student" ? (
         <div className="mt-4 space-y-14">
           {/* Editorial Header + Monospace KPI Strip */}
           <div className="flex flex-col gap-8 border-b border-line pb-8 lg:flex-row lg:items-end lg:justify-between">
@@ -216,7 +289,8 @@ export default function WalletPage() {
                 Your tickets.
               </h1>
               <p className="mt-3 max-w-xl text-base leading-relaxed text-muted">
-                Reserve seats for campus events and present your tear-off QR stub at the gate.
+                Reserve a seat tier for campus events and present your tear-off QR stub at the
+                gate.
               </p>
             </div>
 
@@ -248,13 +322,13 @@ export default function WalletPage() {
             </div>
           </div>
 
-          {error !== "" ? (
+          {pageError !== "" ? (
             <div
               role="alert"
               className="flex items-start gap-3 border border-accent bg-surface px-4 py-3 rounded-card text-sm text-fg"
             >
               <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-accent" strokeWidth={1.75} />
-              <span>{error}</span>
+              <span>{pageError}</span>
             </div>
           ) : null}
 
@@ -285,9 +359,10 @@ export default function WalletPage() {
                   >
                     {/* Upper Pass Info */}
                     <div className="p-6">
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">
-                          Admit One · UniTik
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">
+                          {ticket.tier_name ?? "General Admission"} ·{" "}
+                          {formatTierPrice(ticket.tier_price ?? "0")}
                         </span>
                         {ticket.is_scanned ? (
                           <span className="inline-flex items-center gap-1.5 border border-accent px-2.5 py-0.5 font-mono text-[11px] font-bold uppercase tracking-wider text-accent">
@@ -379,7 +454,7 @@ export default function WalletPage() {
             )}
           </div>
 
-          {/* Section 2: Available Campus Events */}
+          {/* Section 2: Available Campus Events with Tier Selection */}
           <div>
             <div className="flex items-baseline justify-between border-b border-line pb-3">
               <h2 className="font-display text-2xl font-bold tracking-tight text-fg md:text-3xl">
@@ -401,6 +476,12 @@ export default function WalletPage() {
                   const maxLimit = event.max_tickets_per_user ?? 5;
                   const limitReached = heldCount >= maxLimit;
                   const spine = getDateSpine(event.event_date);
+                  const tiers = event.tiers ?? [];
+                  const activeTierId = selectedTiers[event.id] || defaultTierId(event);
+                  const activeTier = tiers.find((t) => t.id === activeTierId) ?? tiers[0] ?? null;
+                  const tierSoldOut = activeTier !== null && activeTier.remaining <= 0;
+                  const allSoldOut =
+                    tiers.length > 0 && tiers.every((t) => t.remaining <= 0);
 
                   return (
                     <li
@@ -415,13 +496,11 @@ export default function WalletPage() {
                         <span className="font-display text-3xl font-bold leading-none tracking-tight sm:my-1 sm:text-4xl">
                           {spine.day}
                         </span>
-                        <span className="font-mono text-[11px] text-accent">
-                          {spine.time}
-                        </span>
+                        <span className="font-mono text-[11px] text-accent">{spine.time}</span>
                       </div>
 
-                      {/* Event Body */}
-                      <div className="flex flex-1 flex-col justify-between gap-3 p-5 sm:p-6">
+                      {/* Event Body + Tier Picker */}
+                      <div className="flex flex-1 flex-col justify-between gap-4 p-5 sm:p-6">
                         <div>
                           <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">
                             Hosted by {event.organizer_name}
@@ -458,10 +537,63 @@ export default function WalletPage() {
                             </p>
                           ) : null}
                         </div>
+
+                        {tiers.length > 0 ? (
+                          <div className="space-y-2 border-t border-dashed border-line pt-3.5">
+                            <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">
+                              Select Ticket Tier
+                            </p>
+                            <div className="grid gap-2 sm:grid-cols-2">
+                              {tiers.map((tier) => {
+                                const selected = activeTier?.id === tier.id;
+                                const soldOut = tier.remaining <= 0;
+                                return (
+                                  <button
+                                    key={tier.id}
+                                    type="button"
+                                    onClick={() =>
+                                      setSelectedTiers((prev) => ({
+                                        ...prev,
+                                        [event.id]: tier.id,
+                                      }))
+                                    }
+                                    className={`flex items-center justify-between gap-2 rounded-card border px-3 py-2 text-left transition-colors ${
+                                      selected
+                                        ? "border-fg bg-fg text-bg"
+                                        : "border-line bg-bg text-fg hover:border-fg"
+                                    } ${soldOut ? "opacity-60" : ""}`}
+                                  >
+                                    <div className="min-w-0">
+                                      <p className="truncate font-mono text-xs font-bold">
+                                        {tier.name}
+                                      </p>
+                                      <p
+                                        className={`font-mono text-[10px] tabular-nums ${
+                                          selected ? "text-bg/75" : "text-muted"
+                                        }`}
+                                      >
+                                        {soldOut
+                                          ? "SOLD OUT"
+                                          : `${tier.remaining} / ${tier.capacity} seats left`}
+                                      </p>
+                                    </div>
+                                    <span
+                                      className={`shrink-0 font-mono text-xs font-bold tabular-nums ${
+                                        selected ? "text-accent" : "text-fg"
+                                      }`}
+                                    >
+                                      {formatTierPrice(tier.price)}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ) : null}
                       </div>
 
                       {/* Perforated Action Stub */}
-                      <div className="relative flex items-center justify-between gap-4 border-t border-dashed border-line p-5 sm:w-48 sm:flex-col sm:justify-center sm:border-t-0 sm:border-l sm:p-6 shrink-0">
+                      <div className="relative flex items-center justify-between gap-4 border-t border-dashed border-line p-5 sm:w-52 sm:flex-col sm:justify-center sm:border-t-0 sm:border-l sm:p-6 shrink-0">
                         <span
                           aria-hidden="true"
                           className="hidden sm:block absolute -top-[1px] -left-2.5 h-2.5 w-5 rounded-b-full border-x border-b border-fg bg-bg"
@@ -471,31 +603,45 @@ export default function WalletPage() {
                           className="hidden sm:block absolute -bottom-[1px] -left-2.5 h-2.5 w-5 rounded-t-full border-x border-t border-fg bg-bg"
                         />
 
-                        <div className="text-left sm:text-center">
-                          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted">
-                            Your Quota
-                          </p>
-                          <p className="mt-0.5 font-mono text-sm font-bold tabular-nums text-fg">
-                            {heldCount} / {maxLimit} HELD
+                        <div className="space-y-1 text-left sm:text-center">
+                          {activeTier ? (
+                            <>
+                              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted">
+                                {activeTier.name}
+                              </p>
+                              <p className="font-mono text-xl font-bold tabular-nums text-fg">
+                                {formatTierPrice(activeTier.price)}
+                              </p>
+                            </>
+                          ) : null}
+                          <p className="font-mono text-[11px] font-semibold tabular-nums text-muted">
+                            Quota: {heldCount} / {maxLimit} held
                           </p>
                         </div>
 
                         <button
                           type="button"
-                          disabled={limitReached || bookingId === event.id}
-                          onClick={() => book(event.id)}
+                          disabled={
+                            limitReached ||
+                            tierSoldOut ||
+                            allSoldOut ||
+                            bookingId === event.id
+                          }
+                          onClick={() => book(event.id, activeTier?.id ?? "")}
                           className={`inline-flex h-11 items-center justify-center gap-1.5 rounded-card border border-fg px-5 font-mono text-xs font-bold uppercase tracking-wider transition-transform sm:w-full ${
-                            limitReached
+                            limitReached || tierSoldOut || allSoldOut
                               ? "bg-bg text-muted opacity-60 cursor-not-allowed"
                               : "bg-accent text-accent-fg shadow-[3px_3px_0px_var(--fg)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none disabled:opacity-60"
                           }`}
                         >
                           <Ticket className="h-3.5 w-3.5" strokeWidth={1.75} />
-                          {limitReached
-                            ? "Limit Reached"
-                            : bookingId === event.id
-                              ? "Booking…"
-                              : "Book Seat"}
+                          {allSoldOut || tierSoldOut
+                            ? "Sold Out"
+                            : limitReached
+                              ? "Limit Reached"
+                              : bookingId === event.id
+                                ? "Booking…"
+                                : "Book Seat"}
                         </button>
                       </div>
                     </li>
@@ -530,7 +676,8 @@ export default function WalletPage() {
             </button>
 
             <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted">
-              Gate Presentation · UniTik
+              {activePass.tier_name ?? "General Admission"} ·{" "}
+              {formatTierPrice(activePass.tier_price ?? "0")}
             </p>
             <h3 className="mt-1.5 pr-8 font-display text-2xl font-bold leading-tight text-fg">
               {activePass.title}
