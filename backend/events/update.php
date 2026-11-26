@@ -1,14 +1,6 @@
 <?php
 declare(strict_types=1);
 
-/**
- * Event Modification Endpoint (POST)
- * 
- * Protected route: Validates dual-identity session against the event's original
- * organizer_id. Sanitizes and updates title, description, venue, and pricing data.
- * Resolves implicit venue creation if a new location is requested.
- */
-
 require_once __DIR__ . '/../core/security.php';
 require_once __DIR__ . '/../core/db.php';
 require_once __DIR__ . '/common.php';
@@ -22,11 +14,12 @@ if (!unitik_is_uuid($id)) {
 }
 $input = unitik_event_input($body);
 
+$pdo = null;
+
 try {
-    // 1. RBAC Barrier & Ownership Scope
     $user = unitik_require_planner();
     $existing = unitik_find_event($id);
-    
+
     if ($existing === null) {
         unitik_json(404, ['ok' => false, 'error' => 'Event not found.']);
     }
@@ -34,20 +27,23 @@ try {
         unitik_json(403, ['ok' => false, 'error' => 'You can only change events you published.']);
     }
 
-    // 2. Safe Venue Mapping
-    $venueId = unitik_resolve_venue($input['venue']);
-    
-    // 3. Execution of Update
-    $stmt = db()->prepare(
+    $pdo = db();
+    $pdo->beginTransaction();
+
+    $venueId = unitik_resolve_venue($input['venue'], $input['venue_url'], $input['capacity']);
+
+    $stmt = $pdo->prepare(
         'UPDATE events
          SET title = :title,
              description = :description,
              event_date = :event_date,
              venue_id = :venue_id,
-             ticket_price = :ticket_price
+             ticket_price = :ticket_price,
+             image_url = :image_url,
+             max_tickets_per_user = :max_tickets_per_user
          WHERE id = :id'
     );
-    
+
     $stmt->execute([
         'id' => $id,
         'title' => $input['title'],
@@ -55,20 +51,44 @@ try {
         'event_date' => $input['event_date'],
         'venue_id' => $venueId,
         'ticket_price' => $input['ticket_price'],
+        'image_url' => $input['image_url'],
+        'max_tickets_per_user' => $input['max_tickets_per_user'],
     ]);
 
-    // 4. State Hydration
+    unitik_sync_event_tiers($pdo, $id, $input['tiers']);
+    $pdo->commit();
+
     $event = unitik_find_event($id);
     if ($event === null) {
         unitik_json(500, ['ok' => false, 'error' => 'Event could not be updated.']);
     }
 
+    $tiersMap = unitik_fetch_tiers_for_events([$id]);
+
     unitik_json(200, [
         'ok' => true,
-        'event' => unitik_event_payload($event, unitik_can_manage_event($user, (string) $event['organizer_id'])),
+        'event' => unitik_event_payload(
+            $event,
+            unitik_can_manage_event($user, (string) $event['organizer_id']),
+            $tiersMap[$id] ?? []
+        ),
     ]);
-} catch (PDOException) {
+} catch (DomainException $e) {
+    if ($pdo instanceof PDO && $pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
+    unitik_json(409, ['ok' => false, 'error' => $e->getMessage()]);
+} catch (PDOException $e) {
+    if ($pdo instanceof PDO && $pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
+    if ((string) $e->getCode() === '23505') {
+        unitik_json(409, ['ok' => false, 'error' => 'Tier names must be unique per event.']);
+    }
     unitik_json(500, ['ok' => false, 'error' => 'Event could not be updated.']);
 } catch (RuntimeException) {
+    if ($pdo instanceof PDO && $pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
     unitik_json(500, ['ok' => false, 'error' => 'Database connection failed.']);
 }

@@ -1,15 +1,6 @@
 <?php
 declare(strict_types=1);
 
-/**
- * Event Creation Endpoint (POST)
- * 
- * Protected route: Strictly requires an active 'organizer' or 'admin' session.
- * Generates a UUID for the new event and securely binds it to the authenticated
- * planner's ID to prevent unauthorized publishing. Automatically resolves and 
- * links venue foreign keys.
- */
-
 require_once __DIR__ . '/../core/security.php';
 require_once __DIR__ . '/../core/db.php';
 require_once __DIR__ . '/common.php';
@@ -18,43 +9,73 @@ $body = unitik_bootstrap();
 unitik_require_method('POST');
 $input = unitik_event_input($body);
 
+$pdo = null;
+
 try {
-    // 1. RBAC Barrier
     $user = unitik_require_planner();
-    
-    // 2. Foreign Key Resolution
-    $venueId = unitik_resolve_venue($input['venue']);
-    
-    // 3. Secure PDO Insertion
-    $stmt = db()->prepare(
-        'INSERT INTO events (id, organizer_id, title, description, event_date, venue_id, ticket_price, status)
-         VALUES (gen_random_uuid(), :organizer_id, :title, :description, :event_date, :venue_id, :ticket_price, :status)
+    $pdo = db();
+    $pdo->beginTransaction();
+
+    $venueId = unitik_resolve_venue($input['venue'], $input['venue_url'], $input['capacity']);
+
+    $stmt = $pdo->prepare(
+        'INSERT INTO events (
+            id, organizer_id, title, description, event_date, venue_id,
+            ticket_price, image_url, max_tickets_per_user, status
+         )
+         VALUES (
+            gen_random_uuid(), :organizer_id, :title, :description, :event_date, :venue_id,
+            :ticket_price, :image_url, :max_tickets_per_user, :status
+         )
          RETURNING id'
     );
-    
+
     $stmt->execute([
-        'organizer_id' => $user['id'], // Implicit trust of the session, not the client payload
+        'organizer_id' => $user['id'],
         'title' => $input['title'],
         'description' => $input['description'],
         'event_date' => $input['event_date'],
         'venue_id' => $venueId,
         'ticket_price' => $input['ticket_price'],
+        'image_url' => $input['image_url'],
+        'max_tickets_per_user' => $input['max_tickets_per_user'],
         'status' => 'published',
     ]);
-    
+
     $created = $stmt->fetch();
     if ($created === false) {
+        $pdo->rollBack();
         unitik_json(500, ['ok' => false, 'error' => 'Event could not be published.']);
     }
 
-    $event = unitik_find_event((string) $created['id']);
+    $eventId = (string) $created['id'];
+    unitik_sync_event_tiers($pdo, $eventId, $input['tiers']);
+    $pdo->commit();
+
+    $event = unitik_find_event($eventId);
     if ($event === null) {
         unitik_json(500, ['ok' => false, 'error' => 'Event could not be published.']);
     }
 
-    unitik_json(201, ['ok' => true, 'event' => unitik_event_payload($event, true)]);
+    $tiersMap = unitik_fetch_tiers_for_events([$eventId]);
+
+    unitik_json(201, [
+        'ok' => true,
+        'event' => unitik_event_payload($event, true, $tiersMap[$eventId] ?? []),
+    ]);
+} catch (DomainException $e) {
+    if ($pdo instanceof PDO && $pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
+    unitik_json(409, ['ok' => false, 'error' => $e->getMessage()]);
 } catch (PDOException) {
+    if ($pdo instanceof PDO && $pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
     unitik_json(500, ['ok' => false, 'error' => 'Event could not be published.']);
 } catch (RuntimeException) {
+    if ($pdo instanceof PDO && $pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
     unitik_json(500, ['ok' => false, 'error' => 'Database connection failed.']);
 }
