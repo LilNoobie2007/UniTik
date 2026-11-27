@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { QRCodeCanvas } from "qrcode.react";
 import {
   ArrowUpRight,
@@ -110,9 +110,28 @@ export default function WalletPage() {
   const [pageError, setPageError] = useState("");
   const [bookingId, setBookingId] = useState("");
   const [activePass, setActivePass] = useState<Pass | null>(null);
+  const syncInFlightRef = useRef(false);
 
   useEffect(() => {
     document.title = "Wallet · UniTik";
+  }, []);
+
+  const syncTickets = useCallback(async () => {
+    if (syncInFlightRef.current) return;
+    syncInFlightRef.current = true;
+    try {
+      const ticketRes = await api<{ ok: true; tickets: Pass[] }>("/tickets/mine.php");
+      setTickets(ticketRes.tickets);
+      setActivePass((current) => {
+        if (current === null) return null;
+        const fresh = ticketRes.tickets.find((t) => t.ticket_code === current.ticket_code);
+        return fresh ?? current;
+      });
+    } catch {
+      // Silent background sync: ignore transient network hiccups
+    } finally {
+      syncInFlightRef.current = false;
+    }
   }, []);
 
   useEffect(() => {
@@ -152,6 +171,37 @@ export default function WalletPage() {
       cancelled = true;
     };
   }, [authStatus, user?.role]);
+
+  const hasUnscannedPasses = tickets.some((t) => !t.is_scanned);
+
+  useEffect(() => {
+    if (authStatus !== "authenticated" || user?.role !== "student") return;
+
+    const handleVisibleOrFocus = () => {
+      if (document.visibilityState === "visible") {
+        void syncTickets();
+      }
+    };
+
+    window.addEventListener("focus", handleVisibleOrFocus);
+    document.addEventListener("visibilitychange", handleVisibleOrFocus);
+
+    const intervalId = hasUnscannedPasses
+      ? window.setInterval(() => {
+          if (document.visibilityState === "visible") {
+            void syncTickets();
+          }
+        }, 4000)
+      : null;
+
+    return () => {
+      window.removeEventListener("focus", handleVisibleOrFocus);
+      document.removeEventListener("visibilitychange", handleVisibleOrFocus);
+      if (intervalId !== null) {
+        window.clearInterval(intervalId);
+      }
+    };
+  }, [authStatus, user?.role, hasUnscannedPasses, syncTickets]);
 
   async function book(eventId: string, tierId: string) {
     setBookingId(eventId);

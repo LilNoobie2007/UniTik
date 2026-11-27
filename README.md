@@ -1,10 +1,5 @@
 # 🎟️ UniTik — Campus Event & Ticketing Management System
 
-![Version](docs/badges/version.svg)
-![PHP](docs/badges/php.svg)
-![Next.js](docs/badges/nextjs.svg)
-![PostgreSQL](docs/badges/postgres.svg)
-
 **Discover. Book. Validate.**
 
 UniTik is a zero-trust campus ticketing platform built to handle student event discovery, multi-tier seat reservations, organizer governance, and atomic door check-in. The Next.js client never communicates directly with the database—all identity is managed via `HttpOnly` sessions, and all transactions are routed through a hardened PHP 8.2 / PDO Backend-For-Frontend (BFF).
@@ -23,7 +18,7 @@ UniTik is a zero-trust campus ticketing platform built to handle student event d
 | **Milestone&nbsp;06** | Super-admin user directory with role filters, search, and live organizer-to-admin privilege toggling | ✔️ |
 | **Milestone&nbsp;07** | Dedicated camera and manual `/scan` gate scanner with atomic `scan_status` claims and `gate_scan_logs` audit trail | ✔️ |
 | **Milestone&nbsp;08** | 3NF multi-tier ticketing (`ticket_tiers`) and PDO row-locked (`SELECT ... FOR UPDATE`) concurrency-safe seat booking | ✔️ |
-| **Milestone&nbsp;09** | HMAC-SHA256 cryptographic QR token signing and tamper-proof signature verification in `backend/tickets/scan.php` | ❌ |
+| **Milestone&nbsp;09** | HMAC-SHA256 cryptographic QR token signing and tamper-proof signature verification in `backend/tickets/scan.php` | ✔️ |
 | **Milestone&nbsp;10** | Automated transactional email pass delivery and booking receipts via PHPMailer SMTP (`vendor/`) | ❌ |
 | **Milestone&nbsp;11** | Python Engine microservice (`microservices/`) for compositing high-resolution downloadable/printable branded QR ticket passes | ❌ |
 | **Milestone&nbsp;12** | GoLang Radar microservice (`microservices/`) for real-time gate scan telemetry, live entry rates, and concurrency load monitoring | ❌ |
