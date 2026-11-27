@@ -10,6 +10,7 @@ import {
   Expand,
   MapPin,
   ShieldAlert,
+  ShieldCheck,
   Ticket,
   X,
 } from "lucide-react";
@@ -44,6 +45,7 @@ type Pass = {
   event_date: string;
   venue: string;
   ticket_code: string;
+  qr_token?: string;
   is_scanned: boolean;
   tier_id?: string | null;
   tier_name?: string;
@@ -188,7 +190,6 @@ export default function WalletPage() {
       }
     } catch (err) {
       setPageError(failureMessage(err));
-      // Refresh live seat availability if another student just took the last seat
       if (err instanceof ApiError && err.status === 409) {
         api<{ ok: true; events: CampusEvent[] }>("/events/list.php")
           .then((res) => setEvents(res.events))
@@ -289,8 +290,8 @@ export default function WalletPage() {
                 Your tickets.
               </h1>
               <p className="mt-3 max-w-xl text-base leading-relaxed text-muted">
-                Reserve a seat tier for campus events and present your tear-off QR stub at the
-                gate.
+                Reserve a seat tier for campus events and present your cryptographically signed QR
+                stub at the gate.
               </p>
             </div>
 
@@ -406,11 +407,11 @@ export default function WalletPage() {
                       />
                     </div>
 
-                    {/* Lower QR Stub — Always Pure White Quiet Zone for Scanners */}
+                    {/* Lower QR Stub — Encodes HMAC-SHA256 Signed QR Token */}
                     <div className="flex flex-col items-center justify-between gap-5 p-6 sm:flex-row">
                       <div className="rounded-sm border border-[#111111] bg-white p-3">
                         <QRCodeCanvas
-                          value={ticket.ticket_code}
+                          value={ticket.qr_token ?? ticket.ticket_code}
                           size={128}
                           level="H"
                           includeMargin={true}
@@ -426,16 +427,22 @@ export default function WalletPage() {
                       </div>
 
                       <div className="flex flex-1 flex-col items-center text-center sm:items-start sm:text-left">
-                        <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted">
-                          Pass Code
-                        </p>
+                        <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.2em] text-muted">
+                          <span>Manual Code</span>
+                          {ticket.qr_token ? (
+                            <span className="inline-flex items-center gap-1 text-stamp font-bold">
+                              <ShieldCheck className="h-3 w-3" strokeWidth={2} />
+                              HMAC
+                            </span>
+                          ) : null}
+                        </div>
                         <p className="mt-1 break-all font-mono text-base font-bold tracking-[0.16em] text-fg tabular-nums">
                           {ticket.ticket_code}
                         </p>
                         <p className="mt-2 text-xs text-muted">
                           {ticket.is_scanned
                             ? "This pass has already been redeemed at the door."
-                            : "Present this code at the venue gate for entry."}
+                            : "QR payload is cryptographically signed for gate entry."}
                         </p>
 
                         <button
@@ -488,7 +495,6 @@ export default function WalletPage() {
                       key={event.id}
                       className="flex flex-col border border-fg bg-surface rounded-card shadow-[4px_4px_0px_var(--fg)] sm:flex-row"
                     >
-                      {/* Ink Date Spine */}
                       <div className="flex items-center justify-between bg-fg px-5 py-3 text-bg sm:w-28 sm:flex-col sm:justify-center sm:py-6 shrink-0">
                         <span className="font-mono text-[11px] uppercase tracking-[0.2em] opacity-75">
                           {spine.month}
@@ -499,7 +505,6 @@ export default function WalletPage() {
                         <span className="font-mono text-[11px] text-accent">{spine.time}</span>
                       </div>
 
-                      {/* Event Body + Tier Picker */}
                       <div className="flex flex-1 flex-col justify-between gap-4 p-5 sm:p-6">
                         <div>
                           <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted">
@@ -592,7 +597,6 @@ export default function WalletPage() {
                         ) : null}
                       </div>
 
-                      {/* Perforated Action Stub */}
                       <div className="relative flex items-center justify-between gap-4 border-t border-dashed border-line p-5 sm:w-52 sm:flex-col sm:justify-center sm:border-t-0 sm:border-l sm:p-6 shrink-0">
                         <span
                           aria-hidden="true"
@@ -688,7 +692,7 @@ export default function WalletPage() {
 
             <div className="mt-5 flex flex-col items-center border border-[#111111] bg-white p-5 rounded-sm">
               <QRCodeCanvas
-                value={activePass.ticket_code}
+                value={activePass.qr_token ?? activePass.ticket_code}
                 size={220}
                 level="H"
                 includeMargin={true}
@@ -715,7 +719,7 @@ export default function WalletPage() {
               ) : (
                 <span className="inline-flex items-center gap-1.5 font-mono text-xs font-bold uppercase tracking-wider text-stamp">
                   <CheckCircle2 className="h-4 w-4" strokeWidth={1.75} />
-                  Valid Entry Pass
+                  HMAC-SHA256 Signed
                 </span>
               )}
 
